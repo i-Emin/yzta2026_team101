@@ -58,8 +58,13 @@ def _messages(db: AsyncIOMotorDatabase):
     return db["messages"]
 
 
+def _transactions(db: AsyncIOMotorDatabase):
+    return db["transactions"]
+
+
 # ===========================================================================
 # KULLANICI CRUD
+
 # ===========================================================================
 
 
@@ -117,6 +122,36 @@ async def get_user_by_id(
     if doc:
         doc["id"] = str(doc.pop("_id"))
     return doc
+
+
+async def add_xp_to_user(db: AsyncIOMotorDatabase, user_id: str, xp_amount: int) -> Optional[dict]:
+    """
+    Kullanıcıya XP ekler ve seviyesini günceller.
+    Lvl 1: 0 - 499
+    Lvl 2: 500 - 1199
+    Lvl 3: 1200 - 2499
+    Lvl 4: 2500+
+    """
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        return None
+
+    new_xp = user.get("xp_score", 0) + xp_amount
+    new_level = 1
+    if new_xp >= 2500:
+        new_level = 4
+    elif new_xp >= 1200:
+        new_level = 3
+    elif new_xp >= 500:
+        new_level = 2
+
+    await _users(db).update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"xp_score": new_xp, "level": new_level}}
+    )
+    user["xp_score"] = new_xp
+    user["level"] = new_level
+    return user
 
 
 # ===========================================================================
@@ -221,3 +256,97 @@ async def get_conversation_history(
     )
 
     return await cursor.to_list(length=limit)
+
+
+# ===========================================================================
+# SİMÜLASYON VE PORTFÖY CRUD
+# ===========================================================================
+
+
+async def create_transaction(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    transaction: "TransactionCreate",
+) -> str:
+    """
+    Kullanıcının alım-satım işlemini kaydeder ve bakiyesini günceller.
+    Hata durumunda ValueError fırlatır.
+    """
+    from models import TransactionInDB
+    
+    # 1. Kullanıcıyı ve bakiyeyi kontrol et
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        raise ValueError("Kullanıcı bulunamadı.")
+        
+    total_cost = transaction.quantity * transaction.price
+    user_balance = user.get("virtual_balance", 10000.0)
+    
+    if transaction.type == "BUY":
+        if user_balance < total_cost:
+            raise ValueError(f"Yetersiz bakiye. Gerekli: {total_cost}, Mevcut: {user_balance}")
+        balance_change = -total_cost
+    else:
+        # SELL - Portföyde yeterli hisse var mı kontrol et
+        portfolio = await get_user_portfolio(db, user_id)
+        current_quantity = next((p["quantity"] for p in portfolio if p["symbol"] == transaction.symbol), 0)
+        if current_quantity < transaction.quantity:
+            raise ValueError(f"Yetersiz hisse. Gerekli: {transaction.quantity}, Mevcut: {current_quantity}")
+        balance_change = total_cost
+
+    # 2. İşlemi kaydet
+    tx_in_db = TransactionInDB(
+        user_id=user_id,
+        **transaction.model_dump()
+    )
+    doc = tx_in_db.model_dump()
+    result = await _transactions(db).insert_one(doc)
+    
+    # 3. Bakiyeyi güncelle
+    await _users(db).update_one(
+        {"_id": ObjectId(user_id)},
+        {"$inc": {"virtual_balance": balance_change}}
+    )
+    
+    return str(result.inserted_id)
+
+
+async def get_user_portfolio(
+    db: AsyncIOMotorDatabase,
+    user_id: str
+) -> list[dict]:
+    """
+    Kullanıcının transactions koleksiyonundaki işlemlerini toplayarak
+    mevcut portföy durumunu hesaplar.
+    """
+    pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$group": {
+            "_id": "$symbol",
+            "total_bought_qty": {
+                "$sum": {"$cond": [{"$eq": ["$type", "BUY"]}, "$quantity", 0]}
+            },
+            "total_bought_cost": {
+                "$sum": {"$cond": [{"$eq": ["$type", "BUY"]}, {"$multiply": ["$quantity", "$price"]}, 0]}
+            },
+            "total_sold_qty": {
+                "$sum": {"$cond": [{"$eq": ["$type", "SELL"]}, "$quantity", 0]}
+            }
+        }},
+        {"$project": {
+            "symbol": "$_id",
+            "_id": 0,
+            "quantity": {"$subtract": ["$total_bought_qty", "$total_sold_qty"]},
+            "average_cost": {
+                "$cond": [
+                    {"$gt": ["$total_bought_qty", 0]},
+                    {"$divide": ["$total_bought_cost", "$total_bought_qty"]},
+                    0
+                ]
+            }
+        }},
+        {"$match": {"quantity": {"$gt": 0}}} # Sadece elinde olanları getir
+    ]
+    
+    cursor = _transactions(db).aggregate(pipeline)
+    return await cursor.to_list(length=None)

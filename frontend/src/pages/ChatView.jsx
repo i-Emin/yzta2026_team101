@@ -15,6 +15,12 @@ const WELCOME_MESSAGE = {
   timestamp: formatTime(new Date()),
 };
 
+const SUGGESTION_PILLS = [
+  "Portföyümü analiz et",
+  "BIST 100 nedir?",
+  "Risk profilime göre strateji önerir misin?"
+];
+
 function readFileAsDataURL(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -72,8 +78,9 @@ export default function ChatView() {
     setPreviewUrl(null);
   };
 
-  const handleSend = async () => {
-    const trimmed = inputText.trim();
+  const handleSend = async (forcedText = null) => {
+    const textToSend = typeof forcedText === "string" ? forcedText : inputText;
+    const trimmed = textToSend.trim();
     if ((!trimmed && !fileBase64) || isLoading) return;
 
     const isPdf  = fileMime === "application/pdf";
@@ -89,7 +96,7 @@ export default function ChatView() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInputText("");
+    if (typeof forcedText !== "string") setInputText("");
 
     const sentBase64 = fileBase64;
     const sentMime   = fileMime;
@@ -99,7 +106,6 @@ export default function ChatView() {
     try {
       const { reply, sessionId: newSessionId } = await sendChatMessage(
         trimmed || (isPdf ? "Bu belgeyi analiz eder misin?" : "Bu görseli analiz eder misin?"),
-        "demo-user",
         sessionId,
         sentBase64,
         sentMime
@@ -128,6 +134,10 @@ export default function ChatView() {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleSuggestionClick = (text) => {
+    handleSend(text);
   };
 
   const canSend = (inputText.trim() || fileBase64) && !isLoading;
@@ -211,11 +221,27 @@ export default function ChatView() {
             </div>
           )}
 
+          {/* Suggestion Pills */}
+          {!fileObj && messages.length <= 2 && (
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              {SUGGESTION_PILLS.map((pill, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSuggestionClick(pill)}
+                  disabled={isLoading}
+                  className="text-xs font-medium bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 transition shadow-sm disabled:opacity-50"
+                >
+                  {pill}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
             <input
               ref={fileRef}
               type="file"
-              accept="image/*, application/pdf"
+              accept=".pdf, .jpg, .jpeg, .png"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -223,10 +249,19 @@ export default function ChatView() {
             <button
               onClick={() => fileRef.current?.click()}
               disabled={isLoading}
-              className="w-12 h-12 rounded-full border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 flex items-center justify-center transition-colors shadow-sm shrink-0"
+              className="group relative w-12 h-12 rounded-full border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 flex items-center justify-center transition-colors shadow-sm shrink-0"
               aria-label="Dosya ekle"
             >
               <Paperclip className="w-5 h-5 text-slate-500" />
+              
+              {/* Custom Tailwind Tooltip */}
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-max max-w-[220px] opacity-0 invisible group-hover:opacity-100 group-hover:visible translate-y-1 group-hover:translate-y-0 transition-all duration-200 z-50 pointer-events-none">
+                <div className="bg-white text-slate-700 text-xs font-medium leading-relaxed px-4 py-2.5 rounded-xl shadow-lg border border-slate-200 text-center relative">
+                  Finansal grafiklerinizi (JPG/PNG) veya şirket raporlarınızı (PDF) yükleyebilirsiniz
+                  {/* Arrow */}
+                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-slate-200 rotate-45"></div>
+                </div>
+              </div>
             </button>
 
             <div className="flex-1">

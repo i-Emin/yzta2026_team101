@@ -21,16 +21,19 @@
 | `GET /news/company/{symbol}` | ✅ | Finnhub şirket haberleri |
 | RAG Pipeline | ✅ | ChromaDB + `all-MiniLM-L6-v2` + Gemini 2.5 Flash |
 | Sohbet Hafızası | ✅ | `conversations` + `messages` MongoDB koleksiyonları |
-| Guardrails | ✅ | `check_user_input` + `check_assistant_output` (LLM tabanlı) |
+| Sokratik Mentor Ajanı | ✅ | Portföy verisini analiz edecek şekilde guardrails ve prompt esnetildi |
+| Telegram Bot | ✅ | Veritabanı (PyMongo) boolean kilitleri çözüldü, Morning Briefing stabil |
+| Oyunlaştırma (XP) | ✅ | Backend XP kazanım motoru (Chat & Al/Sat hook'ları) entegre edildi |
 | CORS | ✅ | `localhost:3000` ve `localhost:5173` izinli |
 
 ### Frontend
 | Sayfa / Bileşen | Durum | Açıklama |
 |---|---|---|
-| Chatbot (`ChatView`) | ✅ | `session_id` yönetimi, Markdown render, Typewriter efekti |
-| Dashboard | ✅ | `getMarketPrice` ile anlık hisse fiyat kartları |
+| Chatbot (`ChatView`) | ✅ | Örnek Soru Baloncukları (Suggestion Pills), Tailwind özel dosya yükleme Tooltip'i |
+| Dashboard | ✅ | `Recharts` ile dinamik portföy pasta grafiği entegre edildi |
 | Haberler (`NewsMock`) | ✅ | `getMarketNews` ile Finnhub haberleri, kategori filtreleme |
-| Profil (`ProfileMock`) | ✅ | Statik iskelet (XP bar, risk profili, ilgi alanları) |
+| Profil (`ProfileMock`) | ✅ | Anlık Sidebar senkronizasyonu sağlandı, dinamik seviye (XP) barı eklendi |
+| Simülasyon | ✅ | Yatay kaydırılabilir, şirket tam isimli zengin hisse listesi (BIST30/ABD) |
 | `api.js` servis katmanı | ✅ | `sendChatMessage`, `getMarketPrice`, `getMarketHistory`, `getMarketNews`, `getCompanyNews` |
 
 ---
@@ -46,20 +49,20 @@
 **Neden kritik:** Şu an tüm endpoint'ler açık; `user_id` sabit `"demo-user"` değeri kullanılıyor. Auth olmadan kullanıcıya özel hiçbir veri gösterilemez.
 
 **Backend:**
-- [ ] `python-jose` + `passlib[bcrypt]` kurulumu ve `requirements.txt`'e eklenmesi
-- [ ] `models.py`'e `hashed_password` alanı eklenmesi
-- [ ] `POST /auth/register` — şifreyi hash'leyip `users` koleksiyonuna kayıt
-- [ ] `POST /auth/login` — kimlik doğrulama + JWT `access_token` üretimi
-- [ ] FastAPI `Security(oauth2_scheme)` ile `/chat/`, `/users/me` endpoint'lerine token koruması
+- [x] `python-jose` + `passlib[bcrypt]` (veya sadece `bcrypt`) kurulumu ve `requirements.txt`'e eklenmesi
+- [x] `models.py`'e `hashed_password` alanı eklenmesi
+- [x] `POST /auth/register` — şifreyi hash'leyip `users` koleksiyonuna kayıt
+- [x] `POST /auth/login` — kimlik doğrulama + JWT `access_token` üretimi
+- [x] FastAPI `Security(oauth2_scheme)` ile `/chat/`, `/users/me` endpoint'lerine token koruması
 
 **Frontend:**
-- [ ] Login ve Register form sayfaları
-- [ ] JWT token'ı `localStorage`'da saklama
-- [ ] `api.js`'teki tüm isteklere `Authorization: Bearer <token>` header'ı eklenmesi
-- [ ] `sendChatMessage` içindeki `"demo-user"` sabitinin token'dan alınan gerçek `user_id` ile değiştirilmesi
-- [ ] Oturum açılmamışsa login sayfasına yönlendirme
+- [x] Login ve Register form sayfaları
+- [x] JWT token'ı `localStorage`'da saklama
+- [x] `api.js`'teki tüm isteklere `Authorization: Bearer <token>` header'ı eklenmesi
+- [x] `sendChatMessage` içindeki `"demo-user"` sabitinin token'dan alınan gerçek `user_id` ile değiştirilmesi
+- [x] Oturum açılmamışsa login sayfasına yönlendirme
 
-**İlgili dosyalar:** `backend/models.py`, `backend/main.py`, `frontend/src/services/api.js`, `frontend/src/pages/`
+**Durum:** ✅ **TAMAMLANDI**
 
 ---
 
@@ -68,15 +71,15 @@
 **Neden kritik:** `ProfileMock.jsx` tamamen statik veri gösteriyor; Auth tamamlanınca gerçek kullanıcı verisi bağlanmalı.
 
 **Backend:**
-- [ ] `GET /users/me` endpoint'i (token'dan `user_id` çekerek ilgili belgeyi döndürür)
-- [ ] `PUT /users/me` endpoint'i (isim, risk_profile, ilgi alanları güncellemesi)
+- [x] `GET /users/me` endpoint'i (token'dan `user_id` çekerek ilgili belgeyi döndürür)
+- [x] `PUT /users/me` endpoint'i (isim, risk_profile, ilgi alanları güncellemesi)
 
 **Frontend:**
-- [ ] `ProfileMock.jsx`'e `useEffect` + `GET /users/me` çağrısı
-- [ ] `xp_score`, `level`, `badges`, `risk_profile`, `virtual_balance` alanlarının dinamik gösterimi
-- [ ] Profil düzenleme formu (isim, risk profili, ilgi alanları)
+- [x] `ProfileMock.jsx`'e `useEffect` + `GET /users/me` çağrısı
+- [x] `xp_score`, `level`, `badges`, `risk_profile`, `virtual_balance` alanlarının dinamik gösterimi
+- [x] Profil düzenleme formu (isim, risk profili, ilgi alanları)
 
-**İlgili dosyalar:** `backend/main.py`, `frontend/src/pages/ProfileMock.jsx`
+**Durum:** ✅ **TAMAMLANDI**
 
 ---
 
@@ -86,21 +89,46 @@
 
 **Veri Kaynağı Seçenekleri:**
 - Yfinance `getMarketHistory` (dinamik, anlık) — **önerilen**
-- Kaggle BIST-100 CSV dataset (statik ama offline çalışır)
 
 **Backend:**
-- [ ] `POST /transactions/` endpoint'i (al/sat işlemi kaydı → `transactions` koleksiyonu)
-- [ ] `GET /portfolio/me` endpoint'i (kullanıcının portföy özeti → `portfolios` koleksiyonu)
-- [ ] `models.py`'deki `Transaction` ve `Portfolio` Pydantic şemalarının aktivasyonu
+- [x] `POST /transactions/` endpoint'i (al/sat işlemi kaydı → `transactions` koleksiyonu)
+- [x] `GET /portfolio/me` endpoint'i (kullanıcının portföy özeti → `portfolios` koleksiyonu)
+- [x] `models.py`'deki `Transaction` ve `Portfolio` Pydantic şemalarının aktivasyonu
+- [x] dairesel import (circular dependency) hatalarının temizlenmesi.
 
 **Frontend:**
-- [ ] `recharts` veya `chart.js` ile OHLCV mum/çizgi grafik bileşeni
-- [ ] Hisse arama + seçim arayüzü
-- [ ] Sanal al/sat formu (miktar, fiyat, onay)
-- [ ] Portföy özeti tablosu (holding, ortalama maliyet, kâr/zarar)
-- [ ] Dashboard'a portföy özet kartı entegrasyonu
+- [x] `recharts` veya `chart.js` ile OHLCV mum/çizgi grafik bileşeni
+- [x] Hisse arama + seçim arayüzü ve hızlı sembol butonları (Pills)
+- [x] Sanal al/sat formu (miktar, fiyat, onay)
+- [x] Portföy özeti tablosu (holding, ortalama maliyet, kâr/zarar)
+- [x] Dashboard'a portföy özet kartı entegrasyonu
 
-**İlgili dosyalar:** `backend/main.py`, `backend/models.py`, `frontend/src/pages/SimulationMock.jsx`, `frontend/src/pages/DashboardMock.jsx`
+**Durum:** ✅ **TAMAMLANDI**
+
+---
+
+### 4. Telegram Akıllı Bildirim (Morning Briefing)
+
+**Neden kritik:** Kullanıcıyı platforma bağlayan temel iletişim motorudur.
+- [x] Backend'de `apscheduler` entegrasyonu.
+- [x] Her kullanıcı için yfinance ile anlık portföy durumunun (K/Z) çekilmesi.
+- [x] BIST100, S&P500, NASDAQ kapanış verilerinin yfinance ile entegrasyonu (`NaN` veriler temizlendi).
+- [x] Gemini Prompt Injection (Risk Profili + İlgi Alanı + Gerçek Fiyatlar).
+- [x] Frontend üzerinden Chat ID ve serbest zaman seçimi girişi, anlık "Test Et" butonu.
+
+**Durum:** ✅ **TAMAMLANDI**
+
+---
+
+### 5. Oyunlaştırma (Gamification)
+
+**Neden kritik:** Kullanıcıyı projede tutmak ve öğrenmeyi teşvik etmek için XP ve Seviye sistemi.
+- [x] Backend `POST /chat/` rotasında mesaj başına +10 XP eklendi.
+- [x] Backend `POST /transactions/` rotasında işlem başına +25 XP eklendi.
+- [x] Seviye limitleri (Lvl 1: 0-499, Lvl 2: 500-1199, vb.) dinamik olarak hesaplanacak şekilde `database.py` güncellendi.
+- [x] Frontend `ProfileMock.jsx` sayfasında İlerleme Çubuğu (Progress bar) kullanıcının mevcut seviyesine göre dinamik hesaplanır hale getirildi.
+
+**Durum:** ✅ **TAMAMLANDI**
 
 ---
 
@@ -110,7 +138,6 @@
 
 | Özellik | Açıklama |
 |---|---|
-| **XP / Gamification** | Her `/chat/` yanıtından sonra `xp_score` artışı, seviye sistemi, liderlik tablosu |
 | **Yatırımcı Meydanı** | Sosyal ağ gönderileri, like/yorum, moderasyon (`investor_square` koleksiyonu) |
 | **Rate Limiting** | `slowapi` ile IP başına `/chat/` istek sınırı |
 | **Global Hata Yönetimi** | `@app.exception_handler` ile standart hata formatı |
@@ -162,7 +189,7 @@ npm run dev
 | `users` | ✅ Aktif | Kayıt + profil |
 | `conversations` | ✅ Aktif | Sohbet oturumları |
 | `messages` | ✅ Aktif | Tekil mesajlar |
-| `transactions` | 🔴 Sprint 3 | Borsa işlemleri |
-| `portfolios` | 🔴 Sprint 3 | Portföy özeti |
+| `transactions` | ✅ Aktif | Borsa işlemleri |
+| `portfolios` | ✅ Aktif (Dinamik) | Portföy özeti (transactions üzerinden hesaplanır) |
 | `news_cache` | 🗂️ Backlog | Haber TTL cache |
 | `investor_square` | 🗂️ Backlog | Sosyal ağ |
