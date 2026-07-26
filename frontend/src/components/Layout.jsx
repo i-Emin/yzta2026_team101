@@ -22,9 +22,9 @@ export default function Layout({ user, setUser, onLogout }) {
   };
 
   return (
-    <div className="flex h-screen bg-finsim-bg overflow-hidden">
+    <div className="flex h-screen bg-finsim-bg">
       <Sidebar activePage={activePage} onNavigate={setActivePage} user={user} onLogout={onLogout} />
-      <main className="flex-1 overflow-hidden">{renderPage()}</main>
+      <main className="flex-1 h-screen overflow-y-auto">{renderPage()}</main>
     </div>
   );
 }

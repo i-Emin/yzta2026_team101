@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, RefreshCw, AlertCircle, PieChart as PieChartIcon } from "lucide-react";
-import { getMarketPrice, getPortfolio } from "../services/api";
+import { TrendingUp, TrendingDown, RefreshCw, AlertCircle, PieChart as PieChartIcon, PlayCircle, BookOpen, Shield, ArrowRight, Wallet, Briefcase } from "lucide-react";
+import { getMarketPrice, getPortfolio, getMe } from "../services/api";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 const WATCHLIST = [
@@ -10,17 +10,16 @@ const WATCHLIST = [
   { ticker: "AAPL",     label: "Apple" },
 ];
 
-function PriceCard({ ticker, label }) {
+function PriceRow({ ticker, label }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
 
   useEffect(() => {
     setLoading(true);
-    setError(null);
     getMarketPrice(ticker)
       .then(setData)
-      .catch(() => setError("Veri alınamadı"))
+      .catch(() => setError("Hata"))
       .finally(() => setLoading(false));
   }, [ticker]);
 
@@ -30,175 +29,190 @@ function PriceCard({ ticker, label }) {
   const isUp = change !== null && change >= 0;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col gap-2 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">{ticker}</span>
-        {!loading && !error && (
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isUp ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"}`}>
-            {change !== null ? `${isUp ? "+" : ""}${change.toFixed(2)}%` : "—"}
-          </span>
+    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+      <div>
+        <p className="font-bold text-slate-800 text-sm">{ticker}</p>
+        <p className="text-xs text-slate-500">{label}</p>
+      </div>
+      <div className="text-right">
+        {loading ? (
+          <RefreshCw className="w-4 h-4 animate-spin text-slate-400 inline-block" />
+        ) : error ? (
+          <span className="text-xs text-red-500">{error}</span>
+        ) : (
+          <>
+            <p className="font-semibold text-slate-800 text-sm">{data.price ? data.price.toFixed(2) : "—"}</p>
+            <p className={`text-xs font-medium flex items-center justify-end gap-1 ${isUp ? "text-emerald-600" : "text-red-500"}`}>
+              {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {change !== null ? `${Math.abs(change).toFixed(2)}%` : "—"}
+            </p>
+          </>
         )}
-      </div>
-
-      <p className="font-semibold text-slate-800 text-sm">{label}</p>
-
-      {loading && (
-        <div className="flex items-center gap-2 text-slate-400 text-sm">
-          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-          <span>Yükleniyor…</span>
-        </div>
-      )}
-      {error && (
-        <div className="flex items-center gap-1.5 text-red-400 text-xs">
-          <AlertCircle className="w-3.5 h-3.5" />
-          <span>{error}</span>
-        </div>
-      )}
-      {!loading && !error && data && (
-        <div className="flex items-center gap-2 mt-1">
-          {isUp
-            ? <TrendingUp className="w-4 h-4 text-emerald-500" />
-            : <TrendingDown className="w-4 h-4 text-red-500" />
-          }
-          <span className={`text-xl font-bold ${isUp ? "text-emerald-600" : "text-red-500"}`}>
-            {data.price != null ? data.price.toFixed(2) : "—"}
-          </span>
-          <span className="text-xs text-slate-400">{data.currency ?? ""}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const COLORS = ['#0ea5e9', '#8b5cf6', '#f59e0b', '#10b981', '#f43f5e', '#64748b'];
-
-function PortfolioSummary() {
-  const [portfolio, setPortfolio] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    getPortfolio()
-      .then(setPortfolio)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-10 bg-white rounded-2xl border border-slate-200">
-        <RefreshCw className="w-6 h-6 animate-spin text-finsim-primary" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-10 bg-white rounded-2xl border border-slate-200 text-center">
-        <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
-        <p className="text-red-500 text-sm">{error}</p>
-      </div>
-    );
-  }
-
-  if (portfolio.length === 0) {
-    return (
-      <div className="p-10 bg-white rounded-2xl border border-slate-200 text-center shadow-sm">
-        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
-          <PieChartIcon className="w-8 h-8 text-slate-400" />
-        </div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-2">Henüz portföyünüzde hisse bulunmuyor</h3>
-        <p className="text-slate-500 text-sm max-w-md mx-auto">
-          Simülasyon sayfasından ilk işleminizi yaparak piyasaları keşfetmeye başlayın ve sanal bakiyenizi değerlendirin!
-        </p>
-      </div>
-    );
-  }
-
-  const chartData = portfolio.map((item) => ({
-    name: item.symbol,
-    value: item.quantity * item.average_cost,
-    quantity: item.quantity,
-    cost: item.average_cost
-  })).sort((a, b) => b.value - a.value);
-
-  const totalValue = chartData.reduce((acc, curr) => acc + curr.value, 0);
-
-  return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 overflow-hidden">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-slate-800">Portföy Dağılımı</h3>
-        <div className="text-right">
-          <p className="text-xs text-slate-400 uppercase font-semibold">Toplam Yatırım Maliyeti</p>
-          <p className="text-2xl font-bold text-finsim-primary">{totalValue.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</p>
-        </div>
-      </div>
-      
-      <div className="flex flex-col md:flex-row items-center gap-8">
-        <div className="w-full md:w-1/2 h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={90}
-                paddingAngle={5}
-                dataKey="value"
-                stroke="none"
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip 
-                formatter={(value) => value.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}
-                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        
-        <div className="w-full md:w-1/2">
-          <div className="space-y-3">
-            {chartData.map((item, index) => (
-              <div key={item.name} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                  <div>
-                    <p className="font-semibold text-slate-800 text-sm">{item.name}</p>
-                    <p className="text-xs text-slate-400">{item.quantity} adet</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-semibold text-slate-700 text-sm">{item.value.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</p>
-                  <p className="text-xs text-slate-400">% {((item.value / totalValue) * 100).toFixed(1)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
 }
 
 export default function DashboardMock() {
-  return (
-    <div className="p-10 max-w-5xl mx-auto pb-20">
-      <h1 className="text-3xl font-bold text-slate-900">Merhaba, hoş geldin 👋</h1>
-      <p className="text-slate-500 mt-1">Piyasaları keşfetmeye ve öğrenmeye hazır mısın?</p>
+  const [profile, setProfile] = useState({});
+  const [portfolioValue, setPortfolioValue] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-      <h2 className="text-lg font-semibold text-slate-700 mt-10 mb-4">Anlık Piyasa Verileri</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {WATCHLIST.map((item) => (
-          <PriceCard key={item.ticker} ticker={item.ticker} label={item.label} />
-        ))}
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      getMe().then(res => setProfile(res || {})).catch(e => console.error("Profile error:", e)),
+      getPortfolio().then(items => {
+        const list = items || [];
+        const val = list.reduce((acc, item) => acc + (item.quantity * item.average_cost), 0);
+        setPortfolioValue(val);
+      }).catch(e => console.error("Portfolio error:", e))
+    ]).finally(() => {
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-screen">
+        <RefreshCw className="w-10 h-10 animate-spin text-finsim-primary" />
+      </div>
+    );
+  }
+
+  const balance = profile?.virtual_balance ?? 10000;
+  const riskProfile = profile?.risk_profile ?? "Dengeli";
+
+  return (
+    <div className="p-10 max-w-6xl mx-auto pb-20">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Merhaba{profile?.name ? `, ${profile.name.split(' ')[0]}` : ''} 👋</h1>
+          <p className="text-slate-500 mt-1">Piyasaları keşfetmeye ve öğrenmeye hazır mısın?</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition shadow-sm">
+            Haberleri Oku
+          </button>
+          <button className="px-5 py-2.5 bg-finsim-primary text-white font-medium rounded-xl hover:bg-finsim-primaryDark transition shadow-sm flex items-center gap-2">
+            Simülasyona Başla <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      <h2 className="text-lg font-semibold text-slate-700 mt-12 mb-4">Portföy Durumu</h2>
-      <PortfolioSummary />
+      {/* 4-Grid Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
+              <Wallet className="w-5 h-5 text-blue-600" />
+            </div>
+            <p className="text-sm font-semibold text-slate-500">Sanal Bakiye</p>
+          </div>
+          <p className="text-2xl font-bold text-slate-900">₺{balance.toLocaleString("tr-TR")}</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
+              <Briefcase className="w-5 h-5 text-emerald-600" />
+            </div>
+            <p className="text-sm font-semibold text-slate-500">Portföy Değeri</p>
+          </div>
+          <p className="text-2xl font-bold text-slate-900">₺{portfolioValue.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center">
+                <BookOpen className="w-5 h-5 text-purple-600" />
+              </div>
+              <p className="text-sm font-semibold text-slate-500">Eğitimler</p>
+            </div>
+            <span className="text-xs font-bold text-purple-600">%60</span>
+          </div>
+          <div className="w-full bg-slate-100 rounded-full h-2 mt-4">
+            <div className="bg-purple-600 h-2 rounded-full" style={{ width: "60%" }}></div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-amber-600" />
+            </div>
+            <p className="text-sm font-semibold text-slate-500">Risk Profili</p>
+          </div>
+          <p className="text-lg font-bold text-slate-900">{riskProfile}</p>
+          <p className="text-xs text-slate-400 mt-1">Orta Seviye Okuryazar</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Area: Learning */}
+        <div className="lg:col-span-2 space-y-6">
+          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-finsim-primary" /> Öğrenme Alanı
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Course Card 1 */}
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition">
+              <div className="h-32 bg-slate-800 relative flex items-center justify-center group cursor-pointer">
+                <PlayCircle className="w-12 h-12 text-white/80 group-hover:text-white group-hover:scale-110 transition-all" />
+              </div>
+              <div className="p-5">
+                <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-md">Bölüm 1</span>
+                <h3 className="font-bold text-slate-900 mt-3 mb-1">Borsaya Giriş 101</h3>
+                <p className="text-sm text-slate-500 mb-4 line-clamp-2">Hisse senedi nedir? Piyasalar nasıl işler? Temel kavramları öğrenin.</p>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-400">12 Dk Video</span>
+                  <span className="font-bold text-purple-600">Tamamlandı ✓</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Course Card 2 */}
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition">
+              <div className="h-32 bg-slate-800 relative flex items-center justify-center group cursor-pointer">
+                <div className="absolute inset-0 bg-gradient-to-tr from-finsim-primary/80 to-blue-900/80"></div>
+                <PlayCircle className="w-12 h-12 text-white/80 group-hover:text-white group-hover:scale-110 transition-all relative z-10" />
+              </div>
+              <div className="p-5">
+                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">Bölüm 2</span>
+                <h3 className="font-bold text-slate-900 mt-3 mb-1">Temel Analiz</h3>
+                <p className="text-sm text-slate-500 mb-4 line-clamp-2">Şirket bilançoları ve finansal raporlar nasıl okunur? Değer yatırımı nedir?</p>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-400">18 Dk Video</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-16 h-1.5 bg-slate-100 rounded-full">
+                      <div className="bg-blue-500 h-1.5 rounded-full" style={{width: '30%'}}></div>
+                    </div>
+                    <span className="font-bold text-slate-600">%30</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Area: Market Overview */}
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2 mb-6">
+            <TrendingUp className="w-5 h-5 text-finsim-primary" /> Piyasa Özeti
+          </h2>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
+            {WATCHLIST.map((item) => (
+              <PriceRow key={item.ticker} ticker={item.ticker} label={item.label} />
+            ))}
+            <button className="block w-full text-center py-3 mt-4 text-sm font-semibold text-finsim-primary bg-blue-50 hover:bg-blue-100 rounded-xl transition">
+              Tüm Piyasayı Gör
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
