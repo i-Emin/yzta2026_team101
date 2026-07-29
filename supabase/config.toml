@@ -1,0 +1,10 @@
+# Supabase CLI yapılandırması
+#
+# project_id = Supabase proje referansı (dashboard URL'indeki kimlik).
+# DİKKAT: Projeyi silip başka bir region'da yeniden kurarsanız bu değer değişir,
+# buradan güncellemeyi unutmayın.
+project_id = "eycczowiyxfgtfalyodi"
+
+[db]
+# Supabase üretimdeki Postgres ana sürümü ile aynı tutulmalı
+major_version = 17
