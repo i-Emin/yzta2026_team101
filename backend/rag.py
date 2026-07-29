@@ -29,10 +29,20 @@ EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 GEMINI_MODEL = "gemini-2.5-flash"
 
 SYSTEM_PROMPT = (
-    "Sen genç yatırımcılar için Sokratik yöntemle eğitim veren, "
-    "asla doğrudan 'al/sat' tavsiyesi vermeyen bir finansal mentorsun. "
-    "Sadece sana verilen bağlamdaki verileri kullan."
+    "Sen genç yatırımcılara finansal okuryazarlık eğitimi veren, deneyimli ve sabırlı bir mentorsun.\n\n"
+    "YANIT YAPISI — Her yanıtta şu sırayı takip et:\n"
+    "1. AÇIKLAMA (zorunlu): Kullanıcının sorusunu, görselini veya belgesini önce açık ve anlaşılır bir dille ele al. "
+    "Grafikteki temel hareketleri, önemli seviyeleri veya belgedeki kritik bilgileri eğitici bir üslupla özetle. "
+    "Karmaşık kavramları somut örneklerle basitleştir.\n"
+    "2. YÖNLENDİRİCİ SORU (opsiyonel, en fazla 1-2 adet): Açıklamanın ardından, yalnızca kullanıcının konuyu "
+    "pekiştirmesini sağlamak amacıyla cevabının en sonuna en fazla 1 veya 2 düşündürücü soru ekle. "
+    "Hiçbir zaman art arda çok sayıda soruyla kullanıcıyı darlama.\n\n"
+    "TEMEL KURALLAR:\n"
+    "- Asla doğrudan 'al', 'sat' veya 'şu varlığa yatırım yap' gibi kesin yatırım tavsiyesi verme.\n"
+    "- Yalnızca sana verilen bağlamdaki (RAG) verileri ve genel finansal bilgini kullan.\n"
+    "- Yanıtların her zaman önce açıklayıcı, sonra yönlendirici olsun; asla yalnızca soru soran bir yapıya dönüşme."
 )
+
 
 _vector_store: Chroma = None
 _llm: ChatGoogleGenerativeAI = None
@@ -116,12 +126,20 @@ def _get_llm() -> ChatGoogleGenerativeAI:
     return _llm
 
 
-async def ask_mentor(query: str, history: list[dict] | None = None) -> str:
+async def ask_mentor(
+    query: str,
+    history: list[dict] | None = None,
+    file_base64: str | None = None,
+    file_mime_type: str | None = None,
+) -> str:
     llm = _get_llm()
 
-    input_check = await check_user_input(query, llm)
-    if not input_check.allowed:
-        return INPUT_REFUSAL_MESSAGE
+    has_file = bool(file_base64 and file_mime_type)
+
+    if not has_file:
+        input_check = await check_user_input(query, llm)
+        if not input_check.allowed:
+            return INPUT_REFUSAL_MESSAGE
 
     vector_store = _get_vector_store()
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
@@ -137,13 +155,40 @@ async def ask_mentor(query: str, history: list[dict] | None = None) -> str:
         elif turn.get("role") == "assistant":
             messages.append(AIMessage(content=turn["content"]))
 
-    messages.append(HumanMessage(content=f"Bağlam:\n{context}\n\nSoru: {query}"))
+    final_text = f"Bağlam:\n{context}\n\nSoru: {query}"
+
+    if has_file:
+        is_pdf = file_mime_type == "application/pdf"
+
+        if is_pdf:
+            file_block = {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{file_mime_type};base64,{file_base64}"
+                },
+            }
+        else:
+            file_block = {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{file_mime_type};base64,{file_base64}"
+                },
+            }
+
+        human_content = [
+            {"type": "text", "text": final_text},
+            file_block,
+        ]
+        messages.append(HumanMessage(content=human_content))
+    else:
+        messages.append(HumanMessage(content=final_text))
 
     response = await llm.ainvoke(messages)
     answer = extract_text(response.content)
 
-    output_check = await check_assistant_output(answer, llm)
-    if not output_check.allowed:
-        return OUTPUT_REFUSAL_MESSAGE
+    if not has_file:
+        output_check = await check_assistant_output(answer, llm)
+        if not output_check.allowed:
+            return OUTPUT_REFUSAL_MESSAGE
 
     return answer

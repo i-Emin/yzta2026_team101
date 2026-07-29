@@ -10,17 +10,19 @@ Endpoint'ler:
 """
 
 from contextlib import asynccontextmanager
+import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
+from fastapi.security import OAuth2PasswordBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 import database as db_ops
 from database import connect_db, close_db, get_database
-from rag import ask_mentor
+from graph import mentor_graph
 from models import (
     ChatMessage,
     ChatResponse,
@@ -28,8 +30,16 @@ from models import (
     MessageCreate,
     UserCreate,
     UserResponse,
+    UserUpdateRequest,
 )
 from api import market, news
+import auth as auth_module
+from auth import decode_token, oauth2_scheme, CurrentUser
+import telegram_bot
+
+# Logger ayarları
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -38,8 +48,19 @@ from api import market, news
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Uygulama başlarken
+    logger.info("MongoDB bağlantısı kuruluyor...")
     await connect_db()
+    
+    # Zamanlayıcıyı başlat
+    logger.info("Bildirim zamanlayıcısı başlatılıyor...")
+    telegram_bot.start_scheduler(get_database())
+    
     yield
+    # Uygulama kapanırken
+    logger.info("Bildirim zamanlayıcısı durduruluyor...")
+    telegram_bot.stop_scheduler()
+    logger.info("MongoDB bağlantısı kapatılıyor...")
     await close_db()
 
 
@@ -61,6 +82,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(auth_module.router)
+
+import simulation as sim_module
+app.include_router(sim_module.router)
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +156,7 @@ async def create_user_endpoint(user: UserCreate, db: DatabaseDep):
     tags=["Sohbet"],
     summary="Sokratik Mentor'a mesaj gönder (hafızalı)",
 )
-async def chat_endpoint(request: MessageCreate, db: DatabaseDep):
+async def chat_endpoint(request: MessageCreate, db: DatabaseDep, current_user: CurrentUser):
     """
     Hafızalı, RAG destekli sohbet endpoint'i.
 
@@ -151,7 +178,7 @@ async def chat_endpoint(request: MessageCreate, db: DatabaseDep):
         # Yeni oturum: başlık olarak kullanıcı mesajının ilk 60 karakteri
         title = request.message[:60] + ("..." if len(request.message) > 60 else "")
         new_conv = ConversationCreate(
-            user_id=request.user_id,
+            user_id=current_user["id"],
             title=title,
         )
         conversation_id = await db_ops.create_conversation(db, new_conv)
@@ -169,16 +196,60 @@ async def chat_endpoint(request: MessageCreate, db: DatabaseDep):
         conversation_id = existing_conv["id"]
 
     user_msg = ChatMessage(role="user", content=request.message)
-    await db_ops.save_message(db, conversation_id, session_id, request.user_id, user_msg)
+    await db_ops.save_message(db, conversation_id, session_id, current_user["id"], user_msg)
+    await db_ops.add_xp_to_user(db, current_user["id"], 10)
 
     history = await db_ops.get_conversation_history(db, session_id, limit=10)
+    portfolio = await db_ops.get_user_portfolio(db, current_user["id"])
 
-    real_reply = await ask_mentor(request.message, history)
+    graph_state = {
+        "query": request.message,
+        "history": history,
+        "file_base64": request.file_base64,
+        "file_mime_type": request.file_mime_type,
+        "route": "",
+        "answer": "",
+        "user_profile": current_user,
+        "portfolio": portfolio,
+    }
+    result = await mentor_graph.ainvoke(graph_state)
+    real_reply = result["answer"]
 
     assistant_msg = ChatMessage(role="assistant", content=real_reply)
-    await db_ops.save_message(db, conversation_id, session_id, request.user_id, assistant_msg)
+    await db_ops.save_message(db, conversation_id, session_id, current_user["id"], assistant_msg)
 
     return ChatResponse(reply=real_reply, session_id=session_id)
+
+
+@app.get("/users/me", response_model=UserResponse, tags=["Kullanıcılar"])
+async def get_me(current_user: CurrentUser):
+    return UserResponse(**current_user)
+
+
+@app.put("/users/me", response_model=UserResponse, tags=["Kullanıcılar"])
+async def update_me(body: UserUpdateRequest, db: DatabaseDep, current_user: CurrentUser):
+    from bson import ObjectId
+    from models import _utcnow
+
+    update_fields: dict = {"last_active_at": _utcnow()}
+    if body.name is not None:
+        update_fields["name"] = body.name
+    if body.risk_profile is not None:
+        update_fields["risk_profile"] = body.risk_profile
+    if body.interests is not None:
+        update_fields["interests"] = body.interests
+    if body.telegram_chat_id is not None:
+        update_fields["telegram_chat_id"] = body.telegram_chat_id
+    if body.briefing_time is not None:
+        update_fields["briefing_time"] = body.briefing_time
+
+    await db["users"].update_one(
+        {"_id": ObjectId(current_user["id"])},
+        {"$set": update_fields},
+    )
+
+    updated_doc = await db_ops.get_user_by_id(db, current_user["id"])
+    return UserResponse(**updated_doc)
 
 
 # ---------------------------------------------------------------------------
@@ -209,3 +280,18 @@ async def company_news(symbol: str, from_date: str, to_date: str):
 async def market_news(category: str = "general"):
     articles = await run_in_threadpool(news.get_market_news, category)
     return {"category": category, "articles": articles}
+
+
+@app.post("/test-telegram-briefing", tags=["Bildirimler"])
+async def test_telegram_briefing(db: DatabaseDep, current_user: CurrentUser):
+    chat_id = current_user.get("telegram_chat_id")
+    if not chat_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Telegram Chat ID bulunamadı. Lütfen önce profil sayfasından Chat ID'nizi ekleyin.",
+        )
+    user_id = current_user["id"]
+    portfolio = await db_ops.get_user_portfolio(db, user_id)
+    briefing_text = await telegram_bot.generate_morning_briefing(current_user, portfolio)
+    await telegram_bot.send_telegram_message(chat_id, briefing_text)
+    return {"status": "ok", "message": f"{chat_id} adresine bülten gönderildi."}

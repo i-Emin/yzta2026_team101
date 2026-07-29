@@ -27,16 +27,33 @@ class UserCreate(BaseModel):
     virtual_balance: float = Field(default=10000.0, ge=0)
     currency: Literal["TRY", "USD"] = "TRY"
     avatar_url: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    briefing_time: str = "09:00"
+    interests: list[str] = Field(default_factory=list)
+
+
+class UserRegister(BaseModel):
+    """
+    POST /auth/register için istemciden gelen veri.
+    Şifre düz metin olarak alınır, backend hash'ler.
+    """
+    name: str
+    email: EmailStr
+    password: str
+    risk_profile: Literal["Düşük", "Orta", "Yüksek"] = "Orta"
 
 
 class UserInDB(UserCreate):
     """
     MongoDB'deki tam kullanıcı belgesi.
-    Kayıt sırasında eklenen alanları içerir; şifre alanı Sprint 3 (JWT) ile gelecek.
+    hashed_password JWT Auth ile eklendi.
     """
+    hashed_password: str = ""
     xp_score: int = Field(default=0, ge=0)
     level: int = Field(default=1, ge=1)
     badges: list[str] = Field(default_factory=list)
+    telegram_chat_id: Optional[str] = None
+    briefing_time: str = "09:00"
     is_active: bool = True
     created_at: datetime = Field(default_factory=_utcnow)
     last_active_at: datetime = Field(default_factory=_utcnow)
@@ -51,13 +68,24 @@ class UserResponse(BaseModel):
     name: str
     email: EmailStr
     risk_profile: str
-    virtual_balance: float
-    currency: str
-    avatar_url: Optional[str]
-    xp_score: int
-    level: int
-    badges: list[str]
-    created_at: datetime
+    virtual_balance: float = 10000.0
+    currency: str = "TRY"
+    avatar_url: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    briefing_time: Optional[str] = "09:00"
+    xp_score: int = 0
+    level: int = 1
+    badges: list[str] = []
+    interests: list[str] = []
+    created_at: Optional[datetime] = None
+
+
+class UserUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    risk_profile: Optional[Literal["Düşük", "Orta", "Yüksek"]] = None
+    interests: Optional[list[str]] = None
+    telegram_chat_id: Optional[str] = None
+    briefing_time: Optional[str] = None
 
 
 # ===========================================================================
@@ -109,10 +137,13 @@ class MessageCreate(BaseModel):
     """
     /chat/ endpoint'ine istemciden gelen istek gövdesi.
     session_id yoksa backend yeni bir Conversation oluşturur.
+    file_base64 + file_mime_type dolu gelirse multimodal (görsel veya PDF) istek olarak işlenir.
     """
     user_id: str
-    session_id: Optional[UUID] = None  # None → yeni oturum başlat
+    session_id: Optional[UUID] = None
     message: str
+    file_base64: Optional[str] = None
+    file_mime_type: Optional[str] = None
 
 
 class ChatRequest(BaseModel):
@@ -130,3 +161,30 @@ class ChatResponse(BaseModel):
     """
     reply: str
     session_id: UUID
+
+
+# ===========================================================================
+# SİMÜLASYON VE PORTFÖY MODELLERİ
+# ===========================================================================
+
+class TransactionCreate(BaseModel):
+    symbol: str = Field(..., max_length=10)
+    type: Literal["BUY", "SELL"]
+    quantity: int = Field(..., gt=0)
+    price: float = Field(..., gt=0.0)
+
+
+class TransactionInDB(TransactionCreate):
+    user_id: str
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class TransactionResponse(TransactionInDB):
+    id: str
+
+
+class PortfolioItem(BaseModel):
+    symbol: str
+    quantity: int
+    average_cost: float
+
