@@ -1,54 +1,76 @@
-import os
+"""
+rag.py — Fin101 RAG altyapısı (vektör deposu + LLM)
+
+Sokratik mentor akışı graph.py içindeki LangGraph düğümlerinde yürür;
+bu modül yalnızca paylaşılan iki kaynağı sağlar: vektör deposu ve LLM.
+
+Vektör deposu ChromaDB yerine Supabase/Postgres + pgvector kullanır.
+Embedding'ler yerel `sentence-transformers` yerine Google'ın
+`text-embedding-004` modelinden alınır. Bunun iki nedeni var:
+
+  1. `sentence-transformers` torch'u da kurduğu için container ~2 GB'a
+     çıkıyor ve modeli RAM'e yüklemek ~400 MB istiyordu; ücretsiz barındırma
+     katmanlarının 512 MB sınırına sığmıyordu.
+  2. text-embedding-004 Türkçe metinlerde all-MiniLM-L6-v2'den belirgin
+     şekilde daha iyi sonuç veriyor.
+
+Boyut farkı önemli: MiniLM 384, text-embedding-004 768 boyutlu vektör
+üretir. Embedding modeli değiştirilirse koleksiyonun sıfırdan yeniden
+indekslenmesi gerekir (bkz. reindex_vector_store).
+"""
+
 import logging
 from pathlib import Path
 
 from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_core.documents import Document
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_postgres import PGVector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
-from dotenv import load_dotenv
 
-from guardrails import (
-    INPUT_REFUSAL_MESSAGE,
-    OUTPUT_REFUSAL_MESSAGE,
-    check_assistant_output,
-    check_user_input,
-    extract_text,
-)
+from config import DATABASE_URL, GEMINI_API_KEY
 
-load_dotenv(override=True)
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 RAG_DATA_DIR = Path(__file__).resolve().parent / "rag_data"
-CHROMA_PERSIST_DIR = Path(__file__).resolve().parent / "chroma_store"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+EMBEDDING_MODEL = "models/text-embedding-004"   # 768 boyut
 GEMINI_MODEL = "gemini-2.5-flash"
+COLLECTION_NAME = "fin101_rag"
 
-SYSTEM_PROMPT = (
-    "Sen genç yatırımcılara finansal okuryazarlık eğitimi veren, deneyimli ve sabırlı bir mentorsun.\n\n"
-    "YANIT YAPISI — Her yanıtta şu sırayı takip et:\n"
-    "1. AÇIKLAMA (zorunlu): Kullanıcının sorusunu, görselini veya belgesini önce açık ve anlaşılır bir dille ele al. "
-    "Grafikteki temel hareketleri, önemli seviyeleri veya belgedeki kritik bilgileri eğitici bir üslupla özetle. "
-    "Karmaşık kavramları somut örneklerle basitleştir.\n"
-    "2. YÖNLENDİRİCİ SORU (opsiyonel, en fazla 1-2 adet): Açıklamanın ardından, yalnızca kullanıcının konuyu "
-    "pekiştirmesini sağlamak amacıyla cevabının en sonuna en fazla 1 veya 2 düşündürücü soru ekle. "
-    "Hiçbir zaman art arda çok sayıda soruyla kullanıcıyı darlama.\n\n"
-    "TEMEL KURALLAR:\n"
-    "- Asla doğrudan 'al', 'sat' veya 'şu varlığa yatırım yap' gibi kesin yatırım tavsiyesi verme.\n"
-    "- Yalnızca sana verilen bağlamdaki (RAG) verileri ve genel finansal bilgini kullan.\n"
-    "- Yanıtların her zaman önce açıklayıcı, sonra yönlendirici olsun; asla yalnızca soru soran bir yapıya dönüşme."
-)
+_vector_store: PGVector | None = None
+_llm: ChatGoogleGenerativeAI | None = None
 
 
-_vector_store: Chroma = None
-_llm: ChatGoogleGenerativeAI = None
+def _psycopg_dsn() -> str:
+    """
+    DATABASE_URL'i langchain_postgres'in beklediği sürücü biçimine çevirir.
+
+    asyncpg havuzu düz `postgresql://` şemasını kullanır; langchain_postgres
+    ise psycopg3 üzerinden bağlanır ve `postgresql+psycopg://` bekler.
+    """
+    if not DATABASE_URL:
+        raise ValueError(
+            "DATABASE_URL tanımlı değil; vektör deposu Postgres'e bağlanamaz."
+        )
+
+    dsn = DATABASE_URL
+    if dsn.startswith("postgres://"):            # bazı sağlayıcılar bu biçimi verir
+        dsn = dsn.replace("postgres://", "postgresql://", 1)
+    if "+" not in dsn.split("://", 1)[0]:        # sürücü belirtilmemişse psycopg ekle
+        dsn = dsn.replace("postgresql://", "postgresql+psycopg://", 1)
+    return dsn
 
 
-def _load_and_split_pdfs() -> list:
+def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
+    return GoogleGenerativeAIEmbeddings(
+        model=EMBEDDING_MODEL,
+        google_api_key=GEMINI_API_KEY,
+    )
+
+
+def _load_and_split_pdfs() -> list[Document]:
+    """rag_data/ altındaki PDF'leri okuyup parçalara böler."""
     logger.info("PDF aranıyor: %s", RAG_DATA_DIR)
 
     if not RAG_DATA_DIR.exists():
@@ -60,19 +82,20 @@ def _load_and_split_pdfs() -> list:
         logger.error("Klasörde hiç .pdf dosyası yok: %s", RAG_DATA_DIR)
         return []
 
-    documents = []
+    documents: list[Document] = []
     for pdf_path in pdf_files:
         try:
-            loader = PyMuPDFLoader(str(pdf_path))
-            pages = loader.load()
+            pages = PyMuPDFLoader(str(pdf_path)).load()
             non_empty = [p for p in pages if p.page_content.strip()]
             if not non_empty:
-                logger.warning("'%s' metin içermiyor (taranmış/resim bazlı olabilir).", pdf_path.name)
+                logger.warning(
+                    "'%s' metin içermiyor (taranmış/resim bazlı olabilir).", pdf_path.name
+                )
             else:
                 logger.info("'%s' → %d sayfa yüklendi.", pdf_path.name, len(non_empty))
             documents.extend(non_empty)
-        except Exception as e:
-            logger.error("'%s' yüklenemedi: %s", pdf_path.name, e)
+        except Exception as exc:                          # noqa: BLE001
+            logger.error("'%s' yüklenemedi: %s", pdf_path.name, exc)
 
     if not documents:
         logger.error("Hiçbir PDF'den metin çıkarılamadı.")
@@ -84,34 +107,84 @@ def _load_and_split_pdfs() -> list:
     return chunks
 
 
-def _get_vector_store() -> Chroma:
+def _collection_is_empty(store: PGVector) -> bool:
+    """
+    Koleksiyonda hiç belge var mı? Tablolar henüz oluşmamışsa da boş sayılır.
+
+    Tek bir embedding çağrısı maliyeti var; sonuç modül düzeyinde
+    önbelleklendiği için süreç başına yalnızca bir kez çalışır.
+    """
+    try:
+        return not store.similarity_search("finans", k=1)
+    except Exception as exc:                              # noqa: BLE001
+        logger.info("Koleksiyon henüz sorgulanabilir değil (%s); boş kabul ediliyor.", exc)
+        return True
+
+
+def _get_vector_store() -> PGVector:
+    """
+    pgvector destekli vektör deposunu döndürür.
+
+    Koleksiyon boşsa rag_data/ altındaki PDF'ler bir kez indekslenir.
+    Embedding'ler Postgres'te kalıcı olduğu için sonraki açılışlarda
+    bu adım atlanır.
+    """
     global _vector_store
     if _vector_store is not None:
         return _vector_store
 
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    store = PGVector(
+        embeddings=_get_embeddings(),
+        collection_name=COLLECTION_NAME,
+        connection=_psycopg_dsn(),
+        use_jsonb=True,
+    )
 
-    if CHROMA_PERSIST_DIR.exists() and any(CHROMA_PERSIST_DIR.iterdir()):
-        logger.info("Mevcut ChromaDB deposu yükleniyor.")
-        _vector_store = Chroma(
-            persist_directory=str(CHROMA_PERSIST_DIR),
-            embedding_function=embeddings,
-        )
-    else:
+    if _collection_is_empty(store):
+        logger.info("Vektör koleksiyonu boş; PDF'ler indeksleniyor.")
         chunks = _load_and_split_pdfs()
         if not chunks:
             raise ValueError(
-                f"Vektör deposu oluşturulamadı: '{RAG_DATA_DIR}' dizininde "
+                f"Vektör deposu doldurulamadı: '{RAG_DATA_DIR}' dizininde "
                 "okunabilir metin içeren PDF bulunamadı."
             )
-        logger.info("ChromaDB deposu ilk kez oluşturuluyor.")
-        _vector_store = Chroma.from_documents(
-            documents=chunks,
-            embedding=embeddings,
-            persist_directory=str(CHROMA_PERSIST_DIR),
-        )
+        store.add_documents(chunks)
+        logger.info("%d chunk pgvector'e yazıldı.", len(chunks))
+    else:
+        logger.info("Mevcut pgvector koleksiyonu kullanılıyor: %s", COLLECTION_NAME)
 
+    _vector_store = store
     return _vector_store
+
+
+def reindex_vector_store() -> int:
+    """
+    Koleksiyonu silip PDF'leri sıfırdan indeksler.
+
+    Embedding modeli (dolayısıyla vektör boyutu) değiştiğinde veya
+    rag_data/ içeriği güncellendiğinde çalıştırılmalıdır.
+
+    Returns:
+        Yazılan chunk sayısı.
+    """
+    global _vector_store
+
+    chunks = _load_and_split_pdfs()
+    if not chunks:
+        raise ValueError(f"'{RAG_DATA_DIR}' dizininde indekslenecek PDF yok.")
+
+    store = PGVector(
+        embeddings=_get_embeddings(),
+        collection_name=COLLECTION_NAME,
+        connection=_psycopg_dsn(),
+        use_jsonb=True,
+        pre_delete_collection=True,       # eski vektörleri temizle
+    )
+    store.add_documents(chunks)
+    _vector_store = store
+
+    logger.info("Yeniden indeksleme tamamlandı: %d chunk.", len(chunks))
+    return len(chunks)
 
 
 def _get_llm() -> ChatGoogleGenerativeAI:
@@ -119,76 +192,15 @@ def _get_llm() -> ChatGoogleGenerativeAI:
     if _llm is None:
         _llm = ChatGoogleGenerativeAI(
             model=GEMINI_MODEL,
-            google_api_key=os.getenv("GEMINI_API_KEY"),
+            google_api_key=GEMINI_API_KEY,
             temperature=0.3,
         )
         logger.info("LLM nesnesi oluşturuldu ve önbelleğe alındı.")
     return _llm
 
 
-async def ask_mentor(
-    query: str,
-    history: list[dict] | None = None,
-    file_base64: str | None = None,
-    file_mime_type: str | None = None,
-) -> str:
-    llm = _get_llm()
-
-    has_file = bool(file_base64 and file_mime_type)
-
-    if not has_file:
-        input_check = await check_user_input(query, llm)
-        if not input_check.allowed:
-            return INPUT_REFUSAL_MESSAGE
-
-    vector_store = _get_vector_store()
-    retriever = vector_store.as_retriever(search_kwargs={"k": 4})
-    relevant_docs = retriever.invoke(query)
-
-    context = "\n\n".join(doc.page_content for doc in relevant_docs)
-
-    messages = [SystemMessage(content=SYSTEM_PROMPT)]
-
-    for turn in (history or []):
-        if turn.get("role") == "user":
-            messages.append(HumanMessage(content=turn["content"]))
-        elif turn.get("role") == "assistant":
-            messages.append(AIMessage(content=turn["content"]))
-
-    final_text = f"Bağlam:\n{context}\n\nSoru: {query}"
-
-    if has_file:
-        is_pdf = file_mime_type == "application/pdf"
-
-        if is_pdf:
-            file_block = {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:{file_mime_type};base64,{file_base64}"
-                },
-            }
-        else:
-            file_block = {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:{file_mime_type};base64,{file_base64}"
-                },
-            }
-
-        human_content = [
-            {"type": "text", "text": final_text},
-            file_block,
-        ]
-        messages.append(HumanMessage(content=human_content))
-    else:
-        messages.append(HumanMessage(content=final_text))
-
-    response = await llm.ainvoke(messages)
-    answer = extract_text(response.content)
-
-    if not has_file:
-        output_check = await check_assistant_output(answer, llm)
-        if not output_check.allowed:
-            return OUTPUT_REFUSAL_MESSAGE
-
-    return answer
+if __name__ == "__main__":
+    # Elle yeniden indeksleme:  python rag.py
+    logging.basicConfig(level=logging.INFO)
+    count = reindex_vector_store()
+    print(f"{count} chunk indekslendi.")

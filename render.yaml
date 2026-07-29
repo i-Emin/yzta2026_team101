@@ -1,0 +1,73 @@
+# ============================================================================
+# Fin101 — Render Blueprint (backend)
+#
+# Kullanım: Render → New → Blueprint → bu repoyu seç. Render bu dosyayı okuyup
+# servisi oluşturur; `sync: false` işaretli değişkenleri panelden sizden ister.
+#
+# Frontend bu blueprint'e dahil değil: Vercel/Netlify'a ayrıca deploy edilir
+# (kök dizin `frontend`, ortam değişkeni VITE_API_URL = bu servisin adresi).
+# ============================================================================
+
+services:
+  - type: web
+    name: fin101-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: frankfurt
+
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+    # main.py'deki GET / sağlık kontrolü
+    healthCheckPath: /
+
+    envVars:
+      # `X | None` tip söz dizimi 3.10+ gerektirir
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+      # Eksik/güvensiz yapılandırmanın sessizce tolere edilmemesini sağlar:
+      # JWT_SECRET_KEY boşsa uygulama açılışta hata verir.
+      - key: ENVIRONMENT
+        value: production
+
+      # Render rastgele üretir; panelde görünür, repoya girmez.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      # --- Panelden elle girilecek değerler ---
+
+      # Supabase → Connect → Direct → Session pooler (port 5432).
+      # Parolada @ # / : ? varsa percent-encode edin (@ → %40).
+      - key: DATABASE_URL
+        sync: false
+
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: FINNHUB_API_KEY
+        sync: false
+
+      # Telegram sabah bülteni kullanılmayacaksa boş bırakılabilir.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+
+      # Frontend'in adresi. Virgülle birden fazla origin verilebilir.
+      # Örn: https://fin101.vercel.app,http://localhost:5173
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+# ----------------------------------------------------------------------------
+# Ücretsiz plan notları
+#
+# * Free web servisleri hareketsizlikte uykuya geçer; ilk istek ~30-50 sn
+#   sürebilir. Demo öncesi bir kez uyandırın.
+# * Uyku, APScheduler tabanlı Telegram sabah bültenini de durdurur: süreç
+#   çalışmadığı sürece cron tetiklenmez. Bülteni güvenilir hale getirmek için
+#   ücretli plana geçmek ya da zamanlamayı Supabase pg_cron + pg_net ile
+#   veritabanı tarafına taşımak gerekir.
+# * RAG koleksiyonu ilk açılışta bir kez doldurulur (rag_data/ altındaki
+#   PDF'ler → pgvector). Bu, ilk isteği 1-3 dakika geciktirebilir; embedding'ler
+#   Postgres'te kalıcı olduğu için sonraki açılışlarda tekrarlanmaz.
+# ----------------------------------------------------------------------------

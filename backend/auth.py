@@ -1,20 +1,39 @@
-import os
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
+import asyncpg
 import bcrypt as _bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from database import get_database, get_user_by_email, get_user_by_id
-from models import UserCreate, UserInDB, UserRegister, UserResponse
+import db_pg as db_ops
+from config import IS_PRODUCTION, JWT_SECRET_KEY
+from db_pg import get_database, get_user_by_email, get_user_by_id
+from models import UserCreate, UserRegister, UserResponse
 
 logger = logging.getLogger(__name__)
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fin101-default-secret-change-in-prod")
+# Eskiden sabit bir "fin101-default-secret-change-in-prod" değerine düşülüyordu;
+# deploy'da JWT_SECRET_KEY unutulursa token'lar herkesin bildiği bir anahtarla
+# imzalanmış olurdu. Artık üretimde açılışta hata veriyor, geliştirmede ise
+# süreç başına rastgele anahtar üretiliyor (yeniden başlatınca oturumlar düşer).
+if JWT_SECRET_KEY:
+    SECRET_KEY = JWT_SECRET_KEY
+elif IS_PRODUCTION:
+    raise RuntimeError(
+        "JWT_SECRET_KEY tanımlı değil. Üretim ortamında zorunludur — "
+        "host'unuzun ortam değişkenlerine güçlü ve rastgele bir değer ekleyin."
+    )
+else:
+    SECRET_KEY = secrets.token_urlsafe(32)
+    logger.warning(
+        "JWT_SECRET_KEY tanımlı değil; bu süreç için geçici bir anahtar üretildi. "
+        "Sunucu yeniden başladığında mevcut oturumlar geçersiz olacak."
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 BCRYPT_ROUNDS = 12
@@ -60,7 +79,7 @@ def decode_token(token: str) -> dict:
 
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[AsyncIOMotorDatabase, Depends(get_database)],
+    db: Annotated[asyncpg.Pool, Depends(get_database)],
 ) -> dict:
     payload = decode_token(token)
     user_id: str = payload.get("sub")
@@ -75,7 +94,7 @@ async def get_current_user(
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 
-DatabaseDep = Annotated[AsyncIOMotorDatabase, Depends(get_database)]
+DatabaseDep = Annotated[asyncpg.Pool, Depends(get_database)]
 
 
 @router.post("/register", response_model=UserResponse, status_code=201)
@@ -83,24 +102,25 @@ async def register(body: UserRegister, db: DatabaseDep):
     if len(body.password) < 6:
         raise HTTPException(status_code=422, detail="Şifre en az 6 karakter olmalıdır.")
 
-    existing = await get_user_by_email(db, str(body.email))
-    if existing:
-        raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.")
-
     user_create = UserCreate(
         name=body.name,
         email=body.email,
         risk_profile=body.risk_profile,
     )
-    user_in_db = UserInDB(
-        **user_create.model_dump(),
-        hashed_password=hash_password(body.password),
-    )
-    doc = user_in_db.model_dump()
-    result = await db["users"].insert_one(doc)
-    logger.info("Yeni kullanıcı kaydedildi: %s (id=%s)", body.email, result.inserted_id)
 
-    created_doc = await get_user_by_email(db, str(body.email))
+    # Mükerrer e-posta kontrolü veritabanındaki unique kısıtına bırakıldı:
+    # ayrı bir "önce sorgula" adımı, iki isteğin arasına girdiği durumda
+    # yarış koşuluna açıktı.
+    try:
+        user_id = await db_ops.create_user_with_password(
+            db, user_create, hash_password(body.password)
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı.")
+
+    logger.info("Yeni kullanıcı kaydedildi: %s (id=%s)", body.email, user_id)
+
+    created_doc = await get_user_by_id(db, user_id)
     return UserResponse(**created_doc)
 
 
