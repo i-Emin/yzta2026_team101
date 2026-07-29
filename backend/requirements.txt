@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 motor
+asyncpg
 pydantic[email]
 python-dotenv
 langchain

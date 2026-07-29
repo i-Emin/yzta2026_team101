@@ -7,6 +7,10 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=True)
 MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DATABASE_NAME: str = os.getenv("DATABASE_NAME", "Fin101DB")
 
+# Supabase / Postgres — Session pooler bağlantı dizesi.
+# Örn: postgresql://postgres.<ref>:<parola>@aws-1-<region>.pooler.supabase.com:5432/postgres
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 FINNHUB_API_KEY: str = os.getenv("FINNHUB_API_KEY", "")
 ALPHA_VANTAGE_API_KEY: str = os.getenv("ALPHA_VANTAGE_API_KEY", "")
