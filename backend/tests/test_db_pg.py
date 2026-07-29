@@ -19,7 +19,6 @@ en güvenlisidir.
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -27,9 +26,14 @@ from uuid import uuid4
 # backend/ dizinini import yoluna ekle (tests/ alt klasöründen çalıştırılıyor)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-if not os.getenv("DATABASE_URL"):
+# config, backend/.env dosyasını da yükler — bu yüzden DATABASE_URL'i
+# ortam değişkeni yerine doğrudan .env'e yazmanız yeterli.
+from config import DATABASE_URL                           # noqa: E402
+
+if not DATABASE_URL:
     print("ATLANDI: DATABASE_URL tanımlı değil.")
-    print("Örnek: DATABASE_URL=postgresql://... python tests/test_db_pg.py")
+    print("backend/.env dosyasına şu satırı ekleyin:")
+    print("  DATABASE_URL=postgresql://postgres.<ref>:<parola>@aws-0-<region>.pooler.supabase.com:5432/postgres")
     sys.exit(0)
 
 import db_pg as db_ops                                    # noqa: E402
@@ -224,11 +228,57 @@ async def cleanup(db) -> None:
             print(f"  (temizlik uyarısı: {uid} silinemedi — {exc})")
 
 
+def _explain_connection_error(exc: BaseException) -> str:
+    """Sık karşılaşılan bağlantı hatalarını anlaşılır bir öneriye çevirir."""
+    import asyncpg
+    import socket
+
+    if isinstance(exc, asyncpg.InvalidPasswordError):
+        return (
+            "Parola hatalı. Parolanızda @ # / : ? gibi karakter varsa percent-encode\n"
+            "  edilmesi gerekir (@ → %40). Supabase panelinden 'Reset database\n"
+            "  password' ile yeni bir parola da alabilirsiniz."
+        )
+    if isinstance(exc, socket.gaierror):
+        return (
+            "Host adı çözümlenemedi. DATABASE_URL içindeki sunucu adresini kontrol edin\n"
+            "  (Supabase → Connect → Direct → Session pooler → host)."
+        )
+    if isinstance(exc, asyncpg.UndefinedTableError):
+        return (
+            "Tablolar bulunamadı. supabase/migrations/20260729120000_init.sql dosyasını\n"
+            "  Supabase SQL Editor'da çalıştırdınız mı?"
+        )
+    if isinstance(exc, asyncpg.UndefinedFunctionError):
+        return (
+            "user_portfolio fonksiyonu yok. Migration dosyası eksik çalışmış olabilir,\n"
+            "  tamamını yeniden çalıştırın."
+        )
+    if isinstance(exc, (ConnectionRefusedError, OSError)):
+        return (
+            "Bağlantı reddedildi veya ağ erişilemedi. Port 5432 (Session pooler) mi?\n"
+            "  Doğrudan bağlantı (db.<ref>.supabase.co) IPv6-only olduğu için çoğu\n"
+            "  ortamdan erişilemez — Session pooler adresini kullanın."
+        )
+    return "Beklenmeyen hata. Ayrıntı yukarıda."
+
+
 async def main() -> int:
-    await db_ops.connect_db()
+    try:
+        await db_ops.connect_db()
+    except Exception as exc:                              # noqa: BLE001
+        print(f"\nBAĞLANTI KURULAMADI: {type(exc).__name__}: {exc}")
+        print(f"\n  → {_explain_connection_error(exc)}\n")
+        return 1
+
     db = db_ops.get_database()
     try:
         await run_tests(db)
+    except Exception as exc:                              # noqa: BLE001
+        print(f"\nTEST SIRASINDA HATA: {type(exc).__name__}: {exc}")
+        print(f"\n  → {_explain_connection_error(exc)}\n")
+        global fail
+        fail += 1
     finally:
         await cleanup(db)
         await db_ops.close_db()
