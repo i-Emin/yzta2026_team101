@@ -23,7 +23,8 @@ from typing import Annotated
 from uuid import UUID
 
 import asyncpg
-from fastapi import Depends, FastAPI, HTTPException, Security
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from fastapi.security import OAuth2PasswordBearer
@@ -94,6 +95,32 @@ app = FastAPI(
     version="0.3.0",
     lifespan=lifespan,
 )
+
+@app.middleware("http")
+async def catch_unhandled_errors(request: Request, call_next):
+    """
+    Yakalanmayan istisnaları normal bir 500 yanıtına çevirir.
+
+    Starlette'te yakalanmayan istisna CORS middleware'inin dışında işleniyor,
+    yani çıplak 500 yanıtına Access-Control-Allow-Origin başlığı eklenmiyor.
+    Tarayıcı da bunu "CORS policy" hatası olarak gösteriyor ve gerçek durum
+    kodu istemciye hiç ulaşmıyor — her sunucu hatası CORS sorunu gibi görünüyor.
+    Burada yakalamak, yanıtın aşağıdaki CORS katmanından geçmesini sağlıyor.
+
+    NOT: Bu middleware CORS'tan ÖNCE eklenmeli. Starlette son eklenen
+    middleware'i en dışa koyuyor; CORS en dışta kalmazsa başlık yine eklenmez.
+    """
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception(
+            "Yakalanmayan hata: %s %s", request.method, request.url.path
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Sunucuda beklenmeyen bir hata oluştu."},
+        )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -268,29 +295,46 @@ async def update_me(body: UserUpdateRequest, db: DatabaseDep, current_user: Curr
 # MARKET VE HABER ENDPOINT'LERİ (Takım Arkadaşının Kodları)
 # ---------------------------------------------------------------------------
 
+# Dış sağlayıcı (Yahoo Finance / Finnhub) hatalarında 502 dönülüyor: sorun
+# istemcinin isteğinde değil, yukarı akış servisinde. Sebep detail alanında
+# taşınıyor, böylece teşhis için sunucu logu okumak gerekmiyor.
 @app.get("/market/history/{ticker}", tags=["Piyasa Verileri"])
 async def stock_history(ticker: str, start: str, end: str):
     # yfinance senkron çalışır; event loop'u kilitlememesi için threadpool'a atılır.
-    data = await run_in_threadpool(market.get_stock_history, ticker, start, end)
+    try:
+        data = await run_in_threadpool(market.get_stock_history, ticker, start, end)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"ticker": ticker, "data": data}
 
 
 @app.get("/market/price/{ticker}", tags=["Piyasa Verileri"])
 async def stock_price(ticker: str):
-    price = await run_in_threadpool(market.get_current_price, ticker)
-    return price
+    try:
+        return await run_in_threadpool(market.get_current_price, ticker)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/news/company/{symbol}", tags=["Haberler"])
 async def company_news(symbol: str, from_date: str, to_date: str):
     # finnhub-python da senkron; aynı sebeple threadpool'a atılır.
-    articles = await run_in_threadpool(news.get_company_news, symbol, from_date, to_date)
+    try:
+        articles = await run_in_threadpool(
+            news.get_company_news, symbol, from_date, to_date
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"symbol": symbol, "articles": articles}
 
 
 @app.get("/news/market", tags=["Haberler"])
 async def market_news(category: str = "general"):
-    articles = await run_in_threadpool(news.get_market_news, category)
+    try:
+        articles = await run_in_threadpool(news.get_market_news, category)
+    except ValueError as exc:
+        # Anahtar eksikse yapılandırma sorunu: 503 + net mesaj.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"category": category, "articles": articles}
 
 
