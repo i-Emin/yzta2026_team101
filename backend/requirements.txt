@@ -1,22 +1,38 @@
 fastapi
 uvicorn[standard]
-motor
 pydantic[email]
 python-dotenv
+python-multipart
+
+# --- Veritabanı (Supabase / Postgres) ---
+asyncpg                    # uygulama veri katmanı (db_pg.py)
+psycopg[binary]            # langchain_postgres/PGVector bu sürücüyü kullanır
+motor                      # MongoDB'ye geri dönüş yolu (database.py) açık kalsın
+
+# --- Yapay zekâ / RAG ---
 langchain
 langchain-core
 langchain-community
 langchain-text-splitters
-langchain-chroma
-langchain-google-genai
+langchain-postgres         # pgvector destekli vektör deposu (langchain-chroma yerine)
+langchain-google-genai     # Gemini sohbet modeli + text-embedding-004
 langgraph
-chromadb
-pymupdf
-sentence-transformers
-yfinance
-finnhub-python
+pymupdf                    # PDF okuma
+
+# NOT: sentence-transformers, chromadb ve langchain-chroma kaldırıldı.
+# sentence-transformers torch'u da kuruyordu: container ~2 GB, modeli RAM'e
+# yüklemek ~400 MB. Ücretsiz barındırma katmanlarının 512 MB sınırına
+# sığmıyordu. Embedding artık Google text-embedding-004 üzerinden alınıyor,
+# vektörler pgvector'de duruyor.
+
+# --- Kimlik doğrulama ---
 python-jose[cryptography]
 bcrypt
-python-multipart
+
+# --- Piyasa verisi ve haberler ---
+yfinance
+finnhub-python
+
+# --- Zamanlanmış görevler / Telegram ---
 apscheduler
 httpx

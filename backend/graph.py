@@ -2,6 +2,7 @@ import os
 import logging
 from typing import Annotated, TypedDict
 
+from fastapi.concurrency import run_in_threadpool
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, StateGraph
@@ -73,13 +74,23 @@ def supervisor_node(state: AgentState) -> AgentState:
     return {**state, "route": route}
 
 
+async def _retrieve_context(query: str, k: int) -> str:
+    """
+    RAG bağlamını asenkron olarak getirir.
+
+    Senkron `retriever.invoke()` çağrısı event loop'u bloke ediyordu. Embedding
+    artık yerel model yerine Google API'sinden alındığı için bu, CPU değil ağ
+    beklemesi anlamına geliyor — tek worker'da eşzamanlı istekleri sıraya sokar.
+    """
+    vector_store = await run_in_threadpool(_get_vector_store)
+    docs = await vector_store.asimilarity_search(query, k=k)
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
 async def analyst_node(state: AgentState) -> AgentState:
     llm = _get_llm()
 
-    vector_store = _get_vector_store()
-    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-    relevant_docs = retriever.invoke(state["query"])
-    context = "\n\n".join(doc.page_content for doc in relevant_docs)
+    context = await _retrieve_context(state["query"], k=3)
 
     messages: list = [SystemMessage(content=ANALYST_SYSTEM_PROMPT)]
 
@@ -109,10 +120,7 @@ async def mentor_node(state: AgentState) -> AgentState:
     if not input_check.allowed:
         return {**state, "answer": INPUT_REFUSAL_MESSAGE}
 
-    vector_store = _get_vector_store()
-    retriever = vector_store.as_retriever(search_kwargs={"k": 4})
-    relevant_docs = retriever.invoke(state["query"])
-    context = "\n\n".join(doc.page_content for doc in relevant_docs)
+    context = await _retrieve_context(state["query"], k=4)
 
     messages: list = [SystemMessage(content=MENTOR_SYSTEM_PROMPT)]
 

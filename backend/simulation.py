@@ -1,13 +1,13 @@
 import logging
 from typing import Annotated
 
+import asyncpg
 import yfinance as yf
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from motor.motor_asyncio import AsyncIOMotorDatabase
 
-import database as db_ops
-from database import get_database
+import db_pg as db_ops
+from db_pg import get_database
 from auth import CurrentUser
 from models import PortfolioItem, TransactionCreate, TransactionResponse
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["Simülasyon"])
 
-DatabaseDep = Annotated[AsyncIOMotorDatabase, Depends(get_database)]
+DatabaseDep = Annotated[asyncpg.Pool, Depends(get_database)]
 
 
 def fetch_stock_data(symbol: str) -> dict:

@@ -1,12 +1,20 @@
 """
 main.py — Fin101 FastAPI Uygulaması
 
+Veri katmanı Supabase/Postgres (db_pg.py, asyncpg). MongoDB katmanı
+database.py içinde duruyor; geri dönmek gerekirse aşağıdaki iki import
+satırını `database` olarak değiştirmek yeterli.
+
 Endpoint'ler:
-  GET  /          → Sağlık kontrolü
-  POST /users/    → Kullanıcı kaydı
-  POST /chat/     → Sohbet (hafızalı, RAG destekli)
-  GET  /market/...→ Piyasa verileri
-  GET  /news/...  → Haber verileri
+  GET  /            → Sağlık kontrolü
+  POST /users/      → Kullanıcı kaydı (şifresiz; asıl kayıt /auth/register)
+  POST /chat/       → Sohbet (hafızalı, RAG destekli)
+  GET  /users/me    → Profil  ·  PUT /users/me → profil güncelleme
+  GET  /market/...  → Piyasa verileri
+  GET  /news/...    → Haber verileri
+
+Ayrıca router olarak: /auth/* (auth.py), /stocks /transactions /portfolio
+(simulation.py).
 """
 
 from contextlib import asynccontextmanager
@@ -14,14 +22,17 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
+import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from fastapi.security import OAuth2PasswordBearer
-from motor.motor_asyncio import AsyncIOMotorDatabase
 
-import database as db_ops
-from database import connect_db, close_db, get_database
+# Supabase/Postgres veri katmanı. MongoDB'ye dönmek gerekirse bu iki satırı
+# `import database as db_ops` / `from database import ...` haline getirmek yeterli.
+import db_pg as db_ops
+from db_pg import connect_db, close_db, get_database
+from config import ALLOWED_ORIGINS
 from graph import mentor_graph
 from models import (
     ChatMessage,
@@ -49,18 +60,18 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Uygulama başlarken
-    logger.info("MongoDB bağlantısı kuruluyor...")
+    logger.info("Postgres bağlantı havuzu kuruluyor...")
     await connect_db()
-    
+
     # Zamanlayıcıyı başlat
     logger.info("Bildirim zamanlayıcısı başlatılıyor...")
     telegram_bot.start_scheduler(get_database())
-    
+
     yield
     # Uygulama kapanırken
     logger.info("Bildirim zamanlayıcısı durduruluyor...")
     telegram_bot.stop_scheduler()
-    logger.info("MongoDB bağlantısı kapatılıyor...")
+    logger.info("Postgres bağlantı havuzu kapatılıyor...")
     await close_db()
 
 
@@ -77,7 +88,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=ALLOWED_ORIGINS,          # ALLOWED_ORIGINS ortam değişkeni
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -94,11 +105,11 @@ app.include_router(sim_module.router)
 # Dependency Injection — Veritabanı
 # ---------------------------------------------------------------------------
 
-def get_db() -> AsyncIOMotorDatabase:
+def get_db() -> asyncpg.Pool:
     return get_database()
 
 
-DatabaseDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
+DatabaseDep = Annotated[asyncpg.Pool, Depends(get_db)]
 
 
 # ===========================================================================
@@ -228,27 +239,18 @@ async def get_me(current_user: CurrentUser):
 
 @app.put("/users/me", response_model=UserResponse, tags=["Kullanıcılar"])
 async def update_me(body: UserUpdateRequest, db: DatabaseDep, current_user: CurrentUser):
-    from bson import ObjectId
     from models import _utcnow
 
-    update_fields: dict = {"last_active_at": _utcnow()}
-    if body.name is not None:
-        update_fields["name"] = body.name
-    if body.risk_profile is not None:
-        update_fields["risk_profile"] = body.risk_profile
-    if body.interests is not None:
-        update_fields["interests"] = body.interests
-    if body.telegram_chat_id is not None:
-        update_fields["telegram_chat_id"] = body.telegram_chat_id
-    if body.briefing_time is not None:
-        update_fields["briefing_time"] = body.briefing_time
+    # exclude_unset: istekte hiç gönderilmeyen alanlar güncellenmez.
+    # telegram_chat_id'nin bilinçli olarak null'a çekilebilmesi için
+    # "None ise atla" mantığı kullanılmıyor.
+    update_fields: dict = body.model_dump(exclude_unset=True)
+    update_fields["last_active_at"] = _utcnow()
 
-    await db["users"].update_one(
-        {"_id": ObjectId(current_user["id"])},
-        {"$set": update_fields},
-    )
+    updated_doc = await db_ops.update_user(db, current_user["id"], update_fields)
+    if not updated_doc:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
 
-    updated_doc = await db_ops.get_user_by_id(db, current_user["id"])
     return UserResponse(**updated_doc)
 
 
