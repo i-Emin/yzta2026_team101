@@ -2,6 +2,8 @@ import logging
 
 import yfinance as yf
 
+from api._cache import ttl_cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,9 +31,10 @@ def get_stock_history(ticker: str, start: str, end: str) -> list[dict]:
     return data.to_dict(orient="records")
 
 
+@ttl_cache(seconds=60)
 def get_current_price(ticker: str) -> dict:
     """
-    Bir hissenin güncel fiyat bilgisini döner.
+    Bir hissenin güncel fiyat bilgisini döner. Sonuç 60 saniye önbelleklenir.
 
     Fiyat öncelikle history() ile alınıyor: bu çağrı Yahoo'nun chart API'sini
     kullanıyor. Eskiden tek kaynak olan .info ise Yahoo'nun sayfasını kazıdığı
