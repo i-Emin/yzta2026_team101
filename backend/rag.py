@@ -5,18 +5,18 @@ Sokratik mentor akışı graph.py içindeki LangGraph düğümlerinde yürür;
 bu modül yalnızca paylaşılan iki kaynağı sağlar: vektör deposu ve LLM.
 
 Vektör deposu ChromaDB yerine Supabase/Postgres + pgvector kullanır.
-Embedding'ler yerel `sentence-transformers` yerine Google'ın
-`text-embedding-004` modelinden alınır. Bunun iki nedeni var:
+Embedding'ler yerel `sentence-transformers` yerine Google'ın embedding
+modelinden alınır. Bunun iki nedeni var:
 
   1. `sentence-transformers` torch'u da kurduğu için container ~2 GB'a
      çıkıyor ve modeli RAM'e yüklemek ~400 MB istiyordu; ücretsiz barındırma
      katmanlarının 512 MB sınırına sığmıyordu.
-  2. text-embedding-004 Türkçe metinlerde all-MiniLM-L6-v2'den belirgin
+  2. Google'ın modeli Türkçe metinlerde all-MiniLM-L6-v2'den belirgin
      şekilde daha iyi sonuç veriyor.
 
-Boyut farkı önemli: MiniLM 384, text-embedding-004 768 boyutlu vektör
-üretir. Embedding modeli değiştirilirse koleksiyonun sıfırdan yeniden
-indekslenmesi gerekir (bkz. reindex_vector_store).
+Embedding modeli değiştirilirse üretilen vektörün boyutu da değişir ve
+koleksiyonun sıfırdan yeniden indekslenmesi gerekir
+(bkz. reindex_vector_store).
 """
 
 import logging
@@ -34,7 +34,12 @@ logger = logging.getLogger(__name__)
 
 RAG_DATA_DIR = Path(__file__).resolve().parent / "rag_data"
 
-EMBEDDING_MODEL = "models/text-embedding-004"   # 768 boyut
+# text-embedding-004 emekliye ayrıldı: ListModels çıktısında artık yer almıyor
+# ve çağrıldığında istek reddediliyor. Yerine gelen gemini-embedding-001
+# embedContent'i destekleyen güncel model. Koleksiyon henüz hiç
+# doldurulmadığı için boyut değişimi bir geçiş gerektirmiyor; ileride model
+# değişirse reindex_vector_store ile sıfırdan indekslenmeli.
+EMBEDDING_MODEL = "models/gemini-embedding-001"
 GEMINI_MODEL = "gemini-2.5-flash"
 COLLECTION_NAME = "fin101_rag"
 
