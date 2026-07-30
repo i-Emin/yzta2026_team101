@@ -76,14 +76,21 @@ def supervisor_node(state: AgentState) -> AgentState:
 
 async def _retrieve_context(query: str, k: int) -> str:
     """
-    RAG bağlamını asenkron olarak getirir.
+    RAG bağlamını event loop'u bloke etmeden getirir.
 
-    Senkron `retriever.invoke()` çağrısı event loop'u bloke ediyordu. Embedding
-    artık yerel model yerine Google API'sinden alındığı için bu, CPU değil ağ
-    beklemesi anlamına geliyor — tek worker'da eşzamanlı istekleri sıraya sokar.
+    Embedding artık yerel model yerine Google API'sinden alındığı için arama
+    CPU değil ağ beklemesi anlamına geliyor; doğrudan çağrılırsa tek worker'da
+    eşzamanlı istekleri sıraya sokar. Bu yüzden threadpool'a atılıyor.
+
+    `asimilarity_search` KULLANILAMAZ: rag.py vektör deposunu senkron modda
+    kuruyor (PGVector'ün async_mode varsayılanı False) ve langchain_postgres
+    bu durumda async metodlarda "Attempting to use an async method in when
+    sync mode is turned on" hatası fırlatıyor. Deponun tamamını async moda
+    almak indeksleme tarafını (add_documents, similarity_search) bozardı;
+    ikisi aynı nesnede karışamıyor.
     """
     vector_store = await run_in_threadpool(_get_vector_store)
-    docs = await vector_store.asimilarity_search(query, k=k)
+    docs = await run_in_threadpool(vector_store.similarity_search, query, k=k)
     return "\n\n".join(doc.page_content for doc in docs)
 
 
