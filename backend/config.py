@@ -37,3 +37,13 @@ ALLOWED_ORIGINS: list[str] = [
     ).split(",")
     if origin.strip()
 ]
+
+# Vercel her deploy için ayrıca hash'li bir önizleme adresi üretiyor
+# (proje-a1b2c3-takim.vercel.app) ve bu adres her push'ta değişiyor, yani
+# ALLOWED_ORIGINS listesine elle yazılamıyor. Kalıp, tam liste eşleşmesi
+# başarısız olduğunda devreye giriyor: ikisinden biri tutarsa CORS geçer.
+# Kapatmak için ALLOWED_ORIGIN_REGEX="" tanımlanması yeterli.
+ALLOWED_ORIGIN_REGEX: str = os.getenv(
+    "ALLOWED_ORIGIN_REGEX",
+    r"https://[a-z0-9-]+\.vercel\.app",
+)
