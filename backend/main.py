@@ -32,7 +32,7 @@ from fastapi.security import OAuth2PasswordBearer
 # `import database as db_ops` / `from database import ...` haline getirmek yeterli.
 import db_pg as db_ops
 from db_pg import connect_db, close_db, get_database
-from config import ALLOWED_ORIGINS
+from config import ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX
 from graph import mentor_graph
 from models import (
     ChatMessage,
@@ -59,6 +59,15 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # CORS hataları dışarıdan "sunucu hiç başlık döndürmedi" olarak görünüyor;
+    # etkin değeri loglamak, sorunun ortam değişkeninde mi kodda mı olduğunu
+    # log'a bakarak ayırt etmeyi sağlıyor.
+    logger.info(
+        "CORS izinli origin listesi: %s | kalıp: %s",
+        ALLOWED_ORIGINS,
+        ALLOWED_ORIGIN_REGEX or "(yok)",
+    )
+
     # Uygulama başlarken
     logger.info("Postgres bağlantı havuzu kuruluyor...")
     await connect_db()
@@ -89,6 +98,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,          # ALLOWED_ORIGINS ortam değişkeni
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
