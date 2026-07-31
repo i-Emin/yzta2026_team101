@@ -79,6 +79,17 @@ GEMINI_EMBEDDING_MODEL: str = (
     _clean("GEMINI_EMBEDDING_MODEL") or "models/gemini-embedding-001"
 )
 
+# RAG parça boyutu. Gemini ücretsiz katmanı dakikada 100 embedding isteği
+# veriyor ve indeksleme parça başına bir istek atıyor; parça sayısı bu
+# sınırın altında kalmalı, aksi halde ilk indeksleme 429 ile düşüyor.
+# rag_data/ (~173 bin karakter) bu değerlerle ~58 parça üretiyor.
+RAG_CHUNK_SIZE: int = int(_clean("RAG_CHUNK_SIZE") or "4000")
+RAG_CHUNK_OVERLAP: int = int(_clean("RAG_CHUNK_OVERLAP") or "400")
+
+# Parçalar tek seferde değil gruplar hâlinde yazılıyor: kotaya takılırsa
+# tüm indeksleme yerine yalnızca o grup başarısız olur.
+RAG_EMBED_BATCH: int = int(_clean("RAG_EMBED_BATCH") or "50")
+
 # "production" olduğunda eksik/güvensiz yapılandırma sessizce tolere edilmez.
 ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development").lower()
 IS_PRODUCTION: bool = ENVIRONMENT == "production"
