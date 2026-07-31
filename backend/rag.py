@@ -28,19 +28,22 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 from langchain_postgres import PGVector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from config import DATABASE_URL, GEMINI_API_KEY
+from config import (
+    DATABASE_URL,
+    GEMINI_API_KEY,
+    GEMINI_EMBEDDING_MODEL,
+    GEMINI_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
 RAG_DATA_DIR = Path(__file__).resolve().parent / "rag_data"
 
-# text-embedding-004 emekliye ayrıldı: ListModels çıktısında artık yer almıyor
-# ve çağrıldığında istek reddediliyor. Yerine gelen gemini-embedding-001
-# embedContent'i destekleyen güncel model. Koleksiyon henüz hiç
-# doldurulmadığı için boyut değişimi bir geçiş gerektirmiyor; ileride model
-# değişirse reindex_vector_store ile sıfırdan indekslenmeli.
-EMBEDDING_MODEL = "models/gemini-embedding-001"
-GEMINI_MODEL = "gemini-2.5-flash"
+# Model adları config üzerinden ortam değişkeninden geliyor: Google modelleri
+# emekliye ayırıyor ve yeni projelere eskilerini açmıyor. Sabit isim her
+# emeklilikte kod değişikliği gerektiriyordu (önce text-embedding-004, sonra
+# gemini-2.5-flash bu yüzden düştü). Değiştirmek artık panelden mümkün.
+EMBEDDING_MODEL = GEMINI_EMBEDDING_MODEL
 COLLECTION_NAME = "fin101_rag"
 
 _vector_store: PGVector | None = None
