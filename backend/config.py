@@ -67,6 +67,18 @@ ALPHA_VANTAGE_API_KEY: str = _clean("ALPHA_VANTAGE_API_KEY")
 NEWSAPI_KEY: str = _clean("NEWSAPI_KEY")
 TELEGRAM_BOT_TOKEN: str = _clean("TELEGRAM_BOT_TOKEN")
 
+# Model adları ortam değişkeninden okunuyor: Google modelleri emekliye
+# ayırıyor ve yeni projelere bazı eski modelleri hiç açmıyor
+# ("no longer available to new users"). Sabit isim, her emeklilikte kod
+# değişikliği + deploy gerektiriyordu; artık panelden değiştirilebiliyor.
+#
+# Varsayılan bilinçli olarak "-latest" takma adı: Google'ın güncel Flash
+# sürümüne işaret ediyor, sürüm emekliye ayrıldığında kendiliğinden kayıyor.
+GEMINI_MODEL: str = _clean("GEMINI_MODEL") or "gemini-flash-latest"
+GEMINI_EMBEDDING_MODEL: str = (
+    _clean("GEMINI_EMBEDDING_MODEL") or "models/gemini-embedding-001"
+)
+
 # "production" olduğunda eksik/güvensiz yapılandırma sessizce tolere edilmez.
 ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development").lower()
 IS_PRODUCTION: bool = ENVIRONMENT == "production"

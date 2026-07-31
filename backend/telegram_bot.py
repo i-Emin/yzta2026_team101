@@ -14,7 +14,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from db_pg import get_user_portfolio, get_users_for_briefing
-from config import GEMINI_API_KEY, TELEGRAM_BOT_TOKEN as _BOT_TOKEN
+from config import GEMINI_API_KEY, GEMINI_MODEL, TELEGRAM_BOT_TOKEN as _BOT_TOKEN
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ async def generate_morning_briefing(user: dict, portfolio: list) -> str:
         interests_str = ", ".join(user.get("interests", [])) or "Genel Piyasa"
 
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model=GEMINI_MODEL,
             google_api_key=GEMINI_API_KEY,
             temperature=0.5,
         )

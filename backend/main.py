@@ -39,6 +39,8 @@ from config import (
     DATABASE_URL,
     FINNHUB_API_KEY,
     GEMINI_API_KEY,
+    GEMINI_EMBEDDING_MODEL,
+    GEMINI_MODEL,
     fingerprint,
 )
 from graph import mentor_graph
@@ -82,10 +84,15 @@ async def lifespan(app: FastAPI):
     # değiştirmediği için "kaydettim ama hâlâ eski anahtar" durumu buradan
     # tek bakışta anlaşılıyor.
     logger.info(
-        "Anahtarlar → GEMINI: %s (beklenen 39) | FINNHUB: %s (beklenen 20) | DATABASE_URL: %s",
+        "Anahtarlar → GEMINI: %s | FINNHUB: %s | DATABASE_URL: %s",
         fingerprint(GEMINI_API_KEY),
         fingerprint(FINNHUB_API_KEY),
         "tanımlı" if DATABASE_URL else "TANIMSIZ",
+    )
+    logger.info(
+        "Modeller → sohbet: %s | embedding: %s",
+        GEMINI_MODEL,
+        GEMINI_EMBEDDING_MODEL,
     )
 
     # Uygulama başlarken
