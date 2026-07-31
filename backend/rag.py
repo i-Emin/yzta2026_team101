@@ -33,6 +33,9 @@ from config import (
     GEMINI_API_KEY,
     GEMINI_EMBEDDING_MODEL,
     GEMINI_MODEL,
+    RAG_CHUNK_OVERLAP,
+    RAG_CHUNK_SIZE,
+    RAG_EMBED_BATCH,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,9 +102,20 @@ def _load_and_split_pdfs() -> list[Document]:
                 logger.warning(
                     "'%s' metin içermiyor (taranmış/resim bazlı olabilir).", pdf_path.name
                 )
-            else:
-                logger.info("'%s' → %d sayfa yüklendi.", pdf_path.name, len(non_empty))
-            documents.extend(non_empty)
+                continue
+
+            # Sayfalar PDF başına tek belgede birleştiriliyor. Eskiden her
+            # sayfa ayrı belgeydi ve bölücü sayfa başına en az bir parça
+            # üretiyordu: 130 sayfa => en az 130 parça, parça boyutundan
+            # bağımsız olarak. Gemini ücretsiz katmanı dakikada 100 embedding
+            # isteğine izin verdiği için ilk indeksleme 429 ile düşüyordu.
+            # Birleştirmenin ikinci faydası: bir cümle sayfa sonunda
+            # kesildiğinde bağlam artık ortadan bölünmüyor.
+            text = "\n\n".join(p.page_content for p in non_empty)
+            documents.append(
+                Document(page_content=text, metadata={"source": pdf_path.name})
+            )
+            logger.info("'%s' → %d sayfa birleştirildi.", pdf_path.name, len(non_empty))
         except Exception as exc:                          # noqa: BLE001
             logger.error("'%s' yüklenemedi: %s", pdf_path.name, exc)
 
@@ -109,10 +123,32 @@ def _load_and_split_pdfs() -> list[Document]:
         logger.error("Hiçbir PDF'den metin çıkarılamadı.")
         return []
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=RAG_CHUNK_SIZE,
+        chunk_overlap=RAG_CHUNK_OVERLAP,
+    )
     chunks = splitter.split_documents(documents)
-    logger.info("Toplam %d chunk oluşturuldu.", len(chunks))
+    logger.info(
+        "Toplam %d chunk oluşturuldu (boyut=%d, örtüşme=%d).",
+        len(chunks), RAG_CHUNK_SIZE, RAG_CHUNK_OVERLAP,
+    )
     return chunks
+
+
+def _add_in_batches(store: PGVector, chunks: list[Document]) -> None:
+    """Parçaları gruplar hâlinde yazar.
+
+    Tek seferde yazmak, kotaya takıldığında tüm indekslemeyi kaybettiriyor.
+    Gruplara bölmek hem ilerlemeyi loglanabilir kılıyor hem de başarısızlığı
+    tek gruba hapsediyor.
+    """
+    total = len(chunks)
+    for start in range(0, total, RAG_EMBED_BATCH):
+        batch = chunks[start:start + RAG_EMBED_BATCH]
+        store.add_documents(batch)
+        logger.info(
+            "pgvector'e yazıldı: %d/%d parça", min(start + len(batch), total), total
+        )
 
 
 def _collection_is_empty(store: PGVector) -> bool:
@@ -156,8 +192,8 @@ def _get_vector_store() -> PGVector:
                 f"Vektör deposu doldurulamadı: '{RAG_DATA_DIR}' dizininde "
                 "okunabilir metin içeren PDF bulunamadı."
             )
-        store.add_documents(chunks)
-        logger.info("%d chunk pgvector'e yazıldı.", len(chunks))
+        _add_in_batches(store, chunks)
+        logger.info("İndeksleme tamamlandı: %d chunk.", len(chunks))
     else:
         logger.info("Mevcut pgvector koleksiyonu kullanılıyor: %s", COLLECTION_NAME)
 
@@ -188,7 +224,7 @@ def reindex_vector_store() -> int:
         use_jsonb=True,
         pre_delete_collection=True,       # eski vektörleri temizle
     )
-    store.add_documents(chunks)
+    _add_in_batches(store, chunks)
     _vector_store = store
 
     logger.info("Yeniden indeksleme tamamlandı: %d chunk.", len(chunks))
