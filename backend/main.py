@@ -33,7 +33,14 @@ from fastapi.security import OAuth2PasswordBearer
 # `import database as db_ops` / `from database import ...` haline getirmek yeterli.
 import db_pg as db_ops
 from db_pg import connect_db, close_db, get_database
-from config import ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX
+from config import (
+    ALLOWED_ORIGINS,
+    ALLOWED_ORIGIN_REGEX,
+    DATABASE_URL,
+    FINNHUB_API_KEY,
+    GEMINI_API_KEY,
+    fingerprint,
+)
 from graph import mentor_graph
 from models import (
     ChatMessage,
@@ -67,6 +74,18 @@ async def lifespan(app: FastAPI):
         "CORS izinli origin listesi: %s | kalıp: %s",
         ALLOWED_ORIGINS,
         ALLOWED_ORIGIN_REGEX or "(yok)",
+    )
+
+    # Anahtarların parmak izi: değeri açığa çıkarmadan, paneldeki değerin
+    # sürece gerçekten ulaşıp ulaşmadığını ve beklenen uzunlukta olup
+    # olmadığını gösterir. Ortam değişkeni kaydetmek çalışan süreci
+    # değiştirmediği için "kaydettim ama hâlâ eski anahtar" durumu buradan
+    # tek bakışta anlaşılıyor.
+    logger.info(
+        "Anahtarlar → GEMINI: %s (beklenen 39) | FINNHUB: %s (beklenen 20) | DATABASE_URL: %s",
+        fingerprint(GEMINI_API_KEY),
+        fingerprint(FINNHUB_API_KEY),
+        "tanımlı" if DATABASE_URL else "TANIMSIZ",
     )
 
     # Uygulama başlarken

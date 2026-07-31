@@ -1,21 +1,71 @@
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=True)
 
+logger = logging.getLogger(__name__)
+
+
+def _clean(name: str, default: str = "") -> str:
+    """Ortam değişkenini okur ve yapıştırma kazalarını temizler.
+
+    Barındırma panellerine değer yapıştırırken iki hata sık yapılıyor ve
+    ikisi de dışarıdan görünmüyor — sunucu yalnızca "geçersiz anahtar" der:
+
+      * baş/sonda boşluk veya satır sonu
+      * .env satırının tamamının kopyalanması:  ANAHTAR="değer"
+
+    Hiçbir API anahtarı tırnakla başlayıp bitmediği ve kendi değişken adını
+    içermediği için bunları temizlemek güvenli. Temizlik yapıldığında uyarı
+    loglanıyor, yani sorun sessizce gizlenmiyor.
+    """
+    raw = os.getenv(name, default)
+    if not raw:
+        return raw
+
+    value = raw.strip()
+
+    # ANAHTAR=... veya ANAHTAR="..." biçiminde yapıştırılmışsa adı at
+    prefix = f"{name}="
+    if value.startswith(prefix):
+        value = value[len(prefix):].strip()
+
+    # Sarmalayan tırnakları at
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        value = value[1:-1].strip()
+
+    if value != raw:
+        logger.warning(
+            "%s değerinde fazladan karakter bulundu ve temizlendi "
+            "(boşluk/tırnak/değişken adı). Panelde yalnızca değerin kendisi olmalı.",
+            name,
+        )
+    return value
+
+
+def fingerprint(value: str) -> str:
+    """Sırrı açığa çıkarmadan tanımlanmasını sağlar: uzunluk + baş/son birkaç karakter."""
+    if not value:
+        return "TANIMSIZ"
+    if len(value) <= 12:
+        return f"{len(value)} karakter (çok kısa)"
+    return f"{len(value)} karakter, {value[:4]}…{value[-4:]}"
+
+
 MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DATABASE_NAME: str = os.getenv("DATABASE_NAME", "Fin101DB")
 
 # Supabase / Postgres — Session pooler bağlantı dizesi.
 # Örn: postgresql://postgres.<ref>:<parola>@aws-1-<region>.pooler.supabase.com:5432/postgres
-DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+DATABASE_URL: str = _clean("DATABASE_URL")
 
-GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-FINNHUB_API_KEY: str = os.getenv("FINNHUB_API_KEY", "")
-ALPHA_VANTAGE_API_KEY: str = os.getenv("ALPHA_VANTAGE_API_KEY", "")
-NEWSAPI_KEY: str = os.getenv("NEWSAPI_KEY", "")
-TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+GEMINI_API_KEY: str = _clean("GEMINI_API_KEY")
+FINNHUB_API_KEY: str = _clean("FINNHUB_API_KEY")
+ALPHA_VANTAGE_API_KEY: str = _clean("ALPHA_VANTAGE_API_KEY")
+NEWSAPI_KEY: str = _clean("NEWSAPI_KEY")
+TELEGRAM_BOT_TOKEN: str = _clean("TELEGRAM_BOT_TOKEN")
 
 # "production" olduğunda eksik/güvensiz yapılandırma sessizce tolere edilmez.
 ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development").lower()
