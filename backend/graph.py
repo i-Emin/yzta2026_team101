@@ -88,10 +88,33 @@ async def _retrieve_context(query: str, k: int) -> str:
     sync mode is turned on" hatası fırlatıyor. Deponun tamamını async moda
     almak indeksleme tarafını (add_documents, similarity_search) bozardı;
     ikisi aynı nesnede karışamıyor.
+
+    RAG bir iyileştirme, zorunluluk değil: vektör deposu erişilemezse
+    (embedding kotası dolmuş, Postgres geçici olarak yanıt vermiyor, koleksiyon
+    henüz kurulmamış) sohbetin tamamen çökmesi yerine belgesiz devam ediliyor.
+    Model kendi bilgisiyle yanıt veriyor, yalnızca kaynak dayanağı zayıflıyor.
+    Hata loglanıyor, yani sessizce kaybolmuyor.
     """
-    vector_store = await run_in_threadpool(_get_vector_store)
-    docs = await run_in_threadpool(vector_store.similarity_search, query, k=k)
+    try:
+        vector_store = await run_in_threadpool(_get_vector_store)
+        docs = await run_in_threadpool(vector_store.similarity_search, query, k=k)
+    except Exception as exc:                              # noqa: BLE001
+        logger.warning(
+            "RAG bağlamı alınamadı, belgesiz devam ediliyor: %s: %s",
+            type(exc).__name__, exc,
+        )
+        return ""
     return "\n\n".join(doc.page_content for doc in docs)
+
+
+def _context_block(context: str) -> str:
+    """Bağlam boşsa başlığı hiç yazma.
+
+    Boş bir "Bağlam:" başlığı modele "kaynak arandı ve bulunamadı" izlenimi
+    veriyor ve yanıtı gereksizce temkinli hale getiriyor. Bağlam yoksa
+    bölümü tamamen atlamak daha doğru.
+    """
+    return f"Bağlam:\n{context}\n\n" if context.strip() else ""
 
 
 async def analyst_node(state: AgentState) -> AgentState:
@@ -107,7 +130,7 @@ async def analyst_node(state: AgentState) -> AgentState:
         elif turn.get("role") == "assistant":
             messages.append(AIMessage(content=turn["content"]))
 
-    final_text = f"Bağlam:\n{context}\n\nSoru: {state['query']}"
+    final_text = f"{_context_block(context)}Soru: {state['query']}"
     file_block = _build_file_block(state["file_base64"], state["file_mime_type"])
     messages.append(HumanMessage(content=[
         {"type": "text", "text": final_text},
@@ -151,7 +174,9 @@ async def mentor_node(state: AgentState) -> AgentState:
     if user_info:
         user_info += "(Bu bilgileri kullanarak yanıtını kişiselleştir ve portföyünü yorumlamasını isterse değerlendir)\n"
 
-    messages.append(HumanMessage(content=f"Bağlam:\n{context}\n{user_info}\nSoru: {state['query']}"))
+    messages.append(HumanMessage(
+        content=f"{_context_block(context)}{user_info}\nSoru: {state['query']}"
+    ))
 
     response = await llm.ainvoke(messages)
     answer = extract_text(response.content)
