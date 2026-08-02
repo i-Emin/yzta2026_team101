@@ -291,10 +291,10 @@ Sprint sonunda temel frontend–backend entegrasyonu, sohbet hafızası ve finan
 ### Sprint 3 Çıktıları
 
 * **Backlog Düzeni ve Story Seçimleri:** Sprint 3, projenin **son ve tamamlayıcı** sprinti olarak planlanmıştır. Sprint 2'nin retrospektifinde belirlenen eksikler — kimlik doğrulama, dinamik profil, borsa simülasyonu, oyunlaştırma ve deployment — doğrudan bu sprintin User Story'lerine dönüştürülmüştür. Sprint ortasında, ücretsiz barındırma kısıtları nedeniyle **veri katmanı ve RAG altyapısının değiştirilmesi** kapsama eklenmiştir.
-* **Sprint Board Durumu:**
+* **Sprint Board Durumu:** Sprint 3 panosu, [Trello board](https://trello.com/invite/b/6a3d8286def1d4972225c9b8/ATTI1dc614b3193520b51446148521c146a8DF7982DE/sprintplan) üzerinden takip edilmiştir.
 
-<!-- Sprint 3 pano ekran görüntülerini images/ klasörüne ekleyip aşağıdaki satırları aktif hâle getirin -->
-<!--
+<!-- Trello pano ekran görüntülerini images/ klasörüne sprint3_t1.png ve sprint3_t2.png adlarıyla
+     ekledikten sonra aşağıdaki satırların yorum işaretlerini kaldırın.
 <p align="center">
   <img src="images/sprint3_t1.png" width="70%">
   <img src="images/sprint3_t2.png" width="70%">
@@ -304,17 +304,24 @@ Sprint sonunda temel frontend–backend entegrasyonu, sohbet hafızası ve finan
 * **Daily Scrum Notları:** Takım içi iletişim WhatsApp üzerinden günlük olarak sürdürülmüş; geliştirme sürecindeki teknik engeller ve çözümleri anlık paylaşılmıştır.
 * **Ürün Durumu:** Sprint 3 sonunda uygulama **uçtan uca çalışır ve yayında** durumdadır. Kullanıcılar gerçek hesap açabilmekte, giriş yapabilmekte, sanal bakiyeleriyle hisse alıp satabilmekte, portföylerini ve kâr/zarar durumlarını görebilmekte, yapay zekâ mentoruyla sohbet edebilmekte ve Telegram üzerinden kişiselleştirilmiş sabah bülteni alabilmektedir.
 
+### Telegram Sabah Bülteni — Çalışan Özellik Kanıtı
+
+Sprint 3'ün en ayırt edici çıktısı, kullanıcıya özel üretilen sabah bültenidir. Aşağıdaki bülten şablon bir metin değildir: kullanıcının **kendi portföyündeki** hisseler tek tek anlık fiyatlarıyla değerlendirilmiş, BIST 100 ve ABD endeksleriyle karşılaştırılmış ve yorum kullanıcının **risk profiline göre** ("orta risk profiline sahip bir yatırımcı olarak") şekillendirilmiştir.
+
+<p align="center">
+  <img src="images/sprint3_telegram_1.jpeg" width="32%">
+  <img src="images/sprint3_telegram_2.jpeg" width="32%">
+</p>
+
+Akış şöyle işler: APScheduler her dakika kullanıcıların seçtiği bülten saatini kontrol eder, saati gelen kullanıcının portföyü yfinance ile anlık fiyatlandırılarak kâr/zarar hesaplanır, endeks verileriyle birlikte Gemini'ye verilir ve üretilen metin Telegram Bot API üzerinden gönderilir.
+
 ### Daily Scrum Ekran Görüntüleri
 
-<!-- Sprint 3 daily scrum görüntülerini images/ klasörüne ekleyip aşağıdaki satırları aktif hâle getirin -->
-<!--
 <p align="center">
-  <img src="images/sprint3_1.png" width="70%">
-  <img src="images/sprint3_2.png" width="70%">
-  <img src="images/sprint3_3.png" width="70%">
-  <img src="images/sprint3_4.png" width="70%">
+  <img src="images/sprint3_1.jpeg" width="32%">
+  <img src="images/sprint3_2.jpeg" width="32%">
+  <img src="images/sprint3_3.jpeg" width="32%">
 </p>
--->
 
 ### Sprint 3 Review
 
