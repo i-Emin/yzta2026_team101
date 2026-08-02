@@ -15,6 +15,20 @@ Kullanıcılar sanal bakiye ile borsa simülasyonu yaparak gerçek para riski ol
 
 Ürün, yatırım tavsiyesi sunmak yerine bilgilendirici ve yönlendirici bir yaklaşım benimseyerek finansal okuryazarlığın gelişmesine katkı sağlamayı hedeflemektedir.
 
+---
+
+## 🌐 Canlı Demo
+
+| Katman | Adres |
+|---|---|
+| **Uygulama** | https://yzta2026-team101.vercel.app |
+| **API** | https://fin101-api.onrender.com |
+| **API Dokümantasyonu** | https://fin101-api.onrender.com/docs |
+
+> Backend ücretsiz planda barındırıldığı için hareketsizlik sonrası ilk istek 30–50 saniye sürebilir; servis uyandıktan sonra normal hızına döner.
+
+---
+
 ## Ürün Özellikleri
 
 ### 💰 Sanal Borsa Simülasyonu
@@ -69,16 +83,81 @@ Kullanıcılar sanal bakiye ile borsa simülasyonu yaparak gerçek para riski ol
 
 ---
 
-## Kullanılacak Teknolojiler ve Mimari
-Projemiz, temiz kod prensipleri ve modern yapay zeka orkestrasyonu gözetilerek geliştirilmektedir.
+## Kullanılan Teknolojiler ve Mimari
 
-* **Proje Yönetimi ve Tasarım:** GitHub, Trello, Figma
-* **Backend Framework:** FastAPI, Uvicorn (Asenkron mimari, Dependency Injection)
-* **Yapay Zekâ ve LLM:** Google Gemini 2.5 Flash, HuggingFace (`all-MiniLM-L6-v2`)
-* **RAG Orkestrasyonu:** LangChain v0.3, ChromaDB (Vektör Veritabanı)
-* **Kalıcı Veritabanı:** MongoDB Atlas (Motor async driver)
-* **Veri İşleme:** PyMuPDF, Pydantic v2
-* **Finansal Veri API'leri:** (İlerleyen sprintlerde entegre edilecek)
+Projemiz, temiz kod prensipleri ve modern yapay zekâ orkestrasyonu gözetilerek geliştirilmiştir.
+
+<img src="docs/mimari.png" width="100%">
+
+Sistem dört katmandan oluşur: kullanıcının tarayıcısında çalışan **React arayüzü**, iş mantığını yürüten **FastAPI sunucusu**, verinin tutulduğu **Supabase/PostgreSQL** ve fiyat, haber ile yapay zekâ hizmetlerini sağlayan **dış servisler**. Frontend hiçbir zaman veritabanına doğrudan gitmez; tüm erişim backend üzerinden ve JWT ile kimliği doğrulanmış olarak yapılır.
+
+| Katman | Teknoloji |
+|---|---|
+| **Proje Yönetimi ve Tasarım** | GitHub, Trello, Figma |
+| **Frontend** | React 19, Vite, Tailwind CSS, Recharts, React Router |
+| **Backend** | FastAPI, Uvicorn (asenkron mimari, Dependency Injection) |
+| **Yapay Zekâ ve LLM** | Google Gemini (`gemini-flash-latest`), LangGraph |
+| **RAG Orkestrasyonu** | LangChain, `gemini-embedding-001`, pgvector |
+| **Kalıcı Veritabanı** | Supabase — PostgreSQL 16 (asyncpg) |
+| **Kimlik Doğrulama** | JWT (python-jose), bcrypt |
+| **Veri İşleme** | PyMuPDF, Pydantic v2 |
+| **Finansal Veri** | yfinance (fiyat), Finnhub (haber) |
+| **Bildirim** | Telegram Bot API, APScheduler |
+| **Barındırma** | Render (API), Vercel (arayüz), Supabase (veritabanı) |
+
+> **Not:** Sprint 1 ve 2'de MongoDB Atlas ve ChromaDB kullanılmıştı. Sprint 3'te veri katmanı PostgreSQL'e, vektör deposu pgvector'e taşındı. Gerekçeler Sprint 3 bölümünde ayrıntılı anlatılmıştır.
+
+---
+
+## Kurulum ve Çalıştırma
+
+### Gereksinimler
+Python 3.11+, Node.js 18+, bir PostgreSQL veritabanı (Supabase önerilir)
+
+### Backend
+
+```bash
+cd backend
+python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+`backend/.env` dosyası:
+
+```
+DATABASE_URL=postgresql://postgres.<ref>:<parola>@<host>.pooler.supabase.com:5432/postgres
+GEMINI_API_KEY=...
+FINNHUB_API_KEY=...
+TELEGRAM_BOT_TOKEN=...
+JWT_SECRET_KEY=<uzun rastgele bir değer>
+ALLOWED_ORIGINS=http://localhost:5173
+```
+
+> Veritabanı şeması için `supabase/migrations/` altındaki SQL dosyasını Supabase SQL Editor'de çalıştırın.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+`frontend/.env.local` dosyası:
+
+```
+VITE_API_URL=http://localhost:8000
+```
+
+### İsteğe bağlı ortam değişkenleri
+
+| Değişken | Varsayılan | Açıklama |
+|---|---|---|
+| `GEMINI_MODEL` | `gemini-flash-latest` | Sohbet modeli |
+| `GEMINI_EMBEDDING_MODEL` | `models/gemini-embedding-001` | Embedding modeli |
+| `RAG_CHUNK_SIZE` | `4000` | RAG parça boyutu |
+| `ALLOWED_ORIGIN_REGEX` | `https://[a-z0-9-]+\.vercel\.app` | CORS kalıbı |
 
 ---
 
@@ -203,5 +282,82 @@ Sprint sonunda temel frontend–backend entegrasyonu, sohbet hafızası ve finan
 * Sanal hisse alım-satım işlemleri ve kullanıcı portföyü için gerekli backend endpoint'leri geliştirilecektir.
 * Dashboard sayfasına kullanıcı portföy özeti ve kâr/zarar bilgileri eklenecektir.
 * Test coverage, global hata yönetimi, rate limiting ve deployment çalışmaları tamamlanacaktır.
+
+</details>
+
+<details>
+<summary><strong>Sprint 3</strong></summary>
+
+### Sprint 3 Çıktıları
+
+* **Backlog Düzeni ve Story Seçimleri:** Sprint 3, projenin **son ve tamamlayıcı** sprinti olarak planlanmıştır. Sprint 2'nin retrospektifinde belirlenen eksikler — kimlik doğrulama, dinamik profil, borsa simülasyonu, oyunlaştırma ve deployment — doğrudan bu sprintin User Story'lerine dönüştürülmüştür. Sprint ortasında, ücretsiz barındırma kısıtları nedeniyle **veri katmanı ve RAG altyapısının değiştirilmesi** kapsama eklenmiştir.
+* **Sprint Board Durumu:**
+
+<!-- Sprint 3 pano ekran görüntülerini images/ klasörüne ekleyip aşağıdaki satırları aktif hâle getirin -->
+<!--
+<p align="center">
+  <img src="images/sprint3_t1.png" width="70%">
+  <img src="images/sprint3_t2.png" width="70%">
+</p>
+-->
+
+* **Daily Scrum Notları:** Takım içi iletişim WhatsApp üzerinden günlük olarak sürdürülmüş; geliştirme sürecindeki teknik engeller ve çözümleri anlık paylaşılmıştır.
+* **Ürün Durumu:** Sprint 3 sonunda uygulama **uçtan uca çalışır ve yayında** durumdadır. Kullanıcılar gerçek hesap açabilmekte, giriş yapabilmekte, sanal bakiyeleriyle hisse alıp satabilmekte, portföylerini ve kâr/zarar durumlarını görebilmekte, yapay zekâ mentoruyla sohbet edebilmekte ve Telegram üzerinden kişiselleştirilmiş sabah bülteni alabilmektedir.
+
+### Daily Scrum Ekran Görüntüleri
+
+<!-- Sprint 3 daily scrum görüntülerini images/ klasörüne ekleyip aşağıdaki satırları aktif hâle getirin -->
+<!--
+<p align="center">
+  <img src="images/sprint3_1.png" width="70%">
+  <img src="images/sprint3_2.png" width="70%">
+  <img src="images/sprint3_3.png" width="70%">
+  <img src="images/sprint3_4.png" width="70%">
+</p>
+-->
+
+### Sprint 3 Review
+
+Sprint 3 kapsamında proje, prototip aşamasından **yayında çalışan bir ürüne** dönüştürülmüştür.
+
+**Kimlik doğrulama ve kullanıcı yönetimi.** Sprint 2'de sabit `"demo-user"` değeriyle çalışan sistem, gerçek kullanıcı hesaplarına geçirilmiştir. `POST /auth/register` ve `POST /auth/login` endpoint'leri geliştirilmiş, şifreler bcrypt ile hash'lenerek saklanmış ve JWT tabanlı oturum yönetimi kurulmuştur. Frontend tarafında giriş ve kayıt sayfaları hazırlanmış, token `localStorage`'da saklanmış, tüm API isteklerine `Authorization` başlığı eklenmiş ve oturum açılmamış kullanıcılar giriş sayfasına yönlendirilmiştir.
+
+**Dinamik profil.** Statik veri gösteren profil sayfası, `GET /users/me` ve `PUT /users/me` endpoint'leriyle gerçek kullanıcı verisine bağlanmıştır. Kullanıcılar artık isim, risk profili ve ilgi alanlarını düzenleyebilmekte; XP, seviye, rozet ve sanal bakiye bilgilerini canlı görebilmektedir.
+
+**Borsa simülasyonu.** Projenin ana öğrenme aracı olan simülasyon sayfası aktifleştirilmiştir. `POST /transactions/` ile sanal alım-satım, `GET /portfolio/me` ile portföy özeti sunulmaktadır. Recharts ile OHLCV grafiği, hisse arama arayüzü, hızlı sembol butonları ve al/sat formu geliştirilmiştir. Portföy hesabında **hareketli ortalama maliyet** yöntemi kullanılmıştır; önceki yaklaşımda satışlar maliyet tabanını düşürmediği için pozisyon kapanıp yeniden açıldığında hatalı ortalama üretiliyordu.
+
+**Telegram akıllı bildirim.** APScheduler ile dakikalık kontrol yapan bir zamanlayıcı kurulmuş, kullanıcının seçtiği saatte kişiselleştirilmiş sabah bülteni gönderilmektedir. Bülten, kullanıcının portföyünü yfinance ile anlık fiyatlandırarak kâr/zarar durumunu hesaplar, BIST 100 ve S&P 500 verilerini ekler ve bunları kullanıcının risk profili ile ilgi alanlarına göre Gemini'ye özetletir. Profil sayfasından Chat ID ve saat girişi ile anlık "Test Et" butonu eklenmiştir.
+
+**Oyunlaştırma.** Sohbet mesajı başına +10 XP, işlem başına +25 XP verilmekte; seviye eşikleri (Lvl 1: 0–499, Lvl 2: 500–1199, Lvl 3: 1200–2499, Lvl 4: 2500+) dinamik hesaplanmaktadır. Profil sayfasındaki ilerleme çubuğu mevcut seviyeye göre doğru oranı göstermektedir. XP güncellemesi tek atomik SQL ifadesiyle yapılır; eşzamanlı isteklerde XP kaybı yaşanmaz.
+
+**Veri katmanı geçişi: MongoDB → PostgreSQL.** Deployment hazırlığı sırasında ücretsiz barındırma katmanlarının bellek sınırlarına takılınması, altyapının gözden geçirilmesini gerektirmiştir. Veri katmanı MongoDB Atlas'tan Supabase/PostgreSQL'e taşınmış, portföy hesabı bir SQL fonksiyonuna alınmış ve şema kısıtlarıyla (negatif bakiye, geçersiz risk profili, harf duyarsız benzersiz e-posta) veri bütünlüğü veritabanı düzeyinde güvence altına alınmıştır. Geri dönüş yolu açık bırakılmıştır: Mongo katmanı repoda durmakta, dönüş tek satır import değişikliğiyle mümkündür.
+
+**RAG altyapısı: ChromaDB → pgvector.** Vektör deposu pgvector'e taşınmış, embedding üretimi yerel `sentence-transformers` modeli yerine Google'ın embedding API'sine devredilmiştir. Bunun nedeni yalnızca mimari sadeleştirme değildir: `sentence-transformers` bağımlılığı `torch`'u da getiriyor ve container boyutunu ~2 GB'a çıkarıyordu; modeli belleğe yüklemek tek başına ~400 MB istiyordu. Değişiklik sonrası kurulu bağımlılıklar **545 MB**, çalışan sürecin bellek kullanımı **240 MB** ölçülmüştür — ücretsiz planın 512 MB sınırına sığması bu sayede mümkün olmuştur.
+
+**Yayına alma.** Uygulama üç ayrı serviste yayına alınmıştır: API **Render** (Frankfurt), arayüz **Vercel**, veritabanı **Supabase**. Yapılandırma `render.yaml` ile sürüm kontrolüne alınmış, JWT anahtarı deploy sırasında üretilir hâle getirilmiş ve izinli origin listesi ortam değişkenine taşınmıştır.
+
+**Dayanıklılık ve hata yönetimi.** Yayın sonrası gerçek kullanım sırasında ortaya çıkan sorunlar giderilmiştir. Yakalanmayan istisnalar için merkezi bir hata katmanı eklenmiş, dış servis arızaları ayırt edilebilir durum kodlarına (502/503) çevrilmiş ve sağlayıcı kaynaklı hatalar için **kademeli bozulma** benimsenmiştir: RAG erişilemezse sohbet belgesiz devam eder, piyasa verisi alınamazsa yalnızca ilgili kart boş kalır. Uygulamanın tamamının tek bir dış servis yüzünden durması engellenmiştir.
+
+### Sprint 3 Retrospective
+
+#### İyi Yapılanlar
+
+* Kimlik doğrulama, dinamik profil, borsa simülasyonu, oyunlaştırma ve Telegram bildirimi dahil planlanan tüm Sprint 3 hedefleri tamamlandı.
+* Uygulama uçtan uca yayına alındı ve halka açık adresten erişilebilir hâle geldi.
+* Ücretsiz barındırma kısıtı erken fark edildi; container 2 GB'dan 545 MB'a indirilerek proje ek maliyet olmadan yayınlanabildi.
+* Portföy ortalama maliyet hatası tespit edilip düzeltildi ve senaryolarla doğrulandı.
+* Veritabanı geçişi, geri dönüş yolu kapatılmadan yapıldı; risk kontrollü ilerlendi.
+* Kademeli bozulma yaklaşımı sayesinde tek bir dış servis arızası uygulamanın tamamını durdurmuyor.
+* Sık karşılaşılan yapılandırma hataları (anahtar yapıştırma kazaları, model adı emeklilikleri) kod tarafında tolere edilir hâle getirildi ve açılışta loglanarak teşhis edilebilir kılındı.
+
+#### Geliştirilebilecek Noktalar
+
+* **Otomatik test altyapısı yok.** Doğrulamalar elle ve senaryo bazlı yapıldı; `pytest` ile birim ve entegrasyon testleri eklenmelidir.
+* **Yahoo Finance hız sınırı.** Bulut sağlayıcıların IP'leri sınırlanabiliyor; 60 saniyelik önbellek eklendi ancak kalıcı çözüm için alternatif fiyat sağlayıcısı veya sunucu tarafı zamanlanmış veri toplama değerlendirilmelidir.
+* **Gemini ücretsiz kotası.** Günlük embedding sınırı yoğun kullanımda yetersiz kalabiliyor; ücretli plana geçiş veya embedding'lerin bir kez üretilip kalıcı saklanması (mevcut yapı buna uygun) planlanmalıdır.
+* **Bölge uyumsuzluğu.** API Frankfurt'ta, veritabanı Singapur'da; aynı bölgeye alınması gecikmeyi belirgin biçimde düşürecektir.
+* **Ücretsiz plan uyku davranışı.** Render servisi hareketsizlikte uykuya geçtiği için ilk istek yavaş; ayrıca uyku sırasında Telegram zamanlayıcısı tetiklenmiyor. Bülteni güvenilir kılmak için zamanlama veritabanı tarafına (`pg_cron`) taşınabilir.
+* **Rate limiting ve Docker** desteği tamamlanmadı.
+* **Sohbet geçmişi seed script'i** (`seed_mock_chat_history.py`) hâlâ eski Mongo katmanına bakıyor; ya PostgreSQL'e çevrilmeli ya da kaldırılmalıdır.
 
 </details>
