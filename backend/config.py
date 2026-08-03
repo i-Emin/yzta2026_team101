@@ -90,6 +90,11 @@ RAG_CHUNK_OVERLAP: int = int(_clean("RAG_CHUNK_OVERLAP") or "400")
 # tüm indeksleme yerine yalnızca o grup başarısız olur.
 RAG_EMBED_BATCH: int = int(_clean("RAG_EMBED_BATCH") or "50")
 
+# Bülten saati kullanıcının yerel saatine göre yorumlanır. Barındırma
+# konteynerleri UTC çalıştığı için datetime.now() doğrudan kullanıldığında
+# 09:00'a kurulan bülten Türkiye saatiyle 12:00'de gidiyordu.
+BRIEFING_TIMEZONE: str = _clean("BRIEFING_TIMEZONE") or "Europe/Istanbul"
+
 # "production" olduğunda eksik/güvensiz yapılandırma sessizce tolere edilmez.
 ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development").lower()
 IS_PRODUCTION: bool = ENVIRONMENT == "production"
