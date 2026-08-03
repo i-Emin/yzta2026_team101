@@ -1,6 +1,7 @@
 import os
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import asyncio
 from typing import Optional
 
@@ -14,7 +15,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from db_pg import get_user_portfolio, get_users_for_briefing
-from config import GEMINI_API_KEY, GEMINI_MODEL, TELEGRAM_BOT_TOKEN as _BOT_TOKEN
+from config import (
+    BRIEFING_TIMEZONE,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    TELEGRAM_BOT_TOKEN as _BOT_TOKEN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -152,9 +158,12 @@ async def briefing_cron_job():
         logger.error("Veritabanı bağlantısı yok, briefing_cron_job iptal edildi.")
         return
 
-    # Şu anki saati "HH:MM" formatında al (UTC veya yerel saat sunucuya bağlıdır, örnekte sunucu saati)
-    now_str = datetime.now().strftime("%H:%M")
-    logger.info(f"Briefing Cron Job çalıştı: Zaman = {now_str}")
+    # Kullanıcının seçtiği bülten saati yerel saat olarak yorumlanıyor.
+    # datetime.now() konteynerin saatini veriyor ve barındırma ortamları UTC
+    # çalışıyor; bu yüzden 09:00'a kurulan bülten Türkiye saatiyle 12:00'de
+    # gidiyordu. Karşılaştırma artık BRIEFING_TIMEZONE üzerinden yapılıyor.
+    now_str = datetime.now(ZoneInfo(BRIEFING_TIMEZONE)).strftime("%H:%M")
+    logger.info("Briefing Cron Job çalıştı: %s (%s)", now_str, BRIEFING_TIMEZONE)
 
     try:
         # briefing_time'ı şu anki saat olan ve geçerli telegram_chat_id'si olan
